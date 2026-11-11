@@ -6,13 +6,26 @@ A macOS Raycast extension for finding and switching between running applications
 
 [App Hopper Companion 1.0.1 release](https://github.com/chenghsj/app-hopper/releases/tag/companion-v1.0.1)
 
-| File | Purpose |
-| --- | --- |
-| [Signed companion XPI](https://github.com/chenghsj/app-hopper/releases/download/companion-v1.0.1/app-hopper-companion-1.0.1.xpi) | Install the same Mozilla-signed add-on in Firefox and Zen. |
+| File                                                                                                                                    | Purpose                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [Signed companion XPI](https://github.com/chenghsj/app-hopper/releases/download/companion-v1.0.1/app-hopper-companion-1.0.1.xpi)        | Install the same Mozilla-signed add-on in Firefox and Zen.                  |
 | [Companion source ZIP](https://github.com/chenghsj/app-hopper/releases/download/companion-v1.0.1/app-hopper-companion-1.0.1-source.zip) | TypeScript source, pinned dependencies and reproducible build instructions. |
-| [SHA256SUMS](https://github.com/chenghsj/app-hopper/releases/download/companion-v1.0.1/SHA256SUMS) | Checksums for the signed XPI and source archive. |
+| [SHA256SUMS](https://github.com/chenghsj/app-hopper/releases/download/companion-v1.0.1/SHA256SUMS)                                      | Checksums for the signed XPI and source archive.                            |
 
-**The companion requires the App Hopper Raycast extension.** This repository currently distributes the browser companion; it does not yet provide an installable App Hopper Raycast extension package. Installing the XPI alone does not install App Hopper or its local native helper.
+**This repository contains the complete App Hopper project**: the Raycast extension, shared Firefox/Zen companion, native macOS helpers, tests, build tools and documentation. The release downloads above contain the browser companion, not a packaged Raycast extension. Install App Hopper from source below before enabling the companion.
+
+## Install App Hopper from source
+
+Install [Raycast](https://www.raycast.com/) and Node.js 22.20.0 or newer with npm. Install Apple's Command Line Tools (`xcode-select --install`) or Xcode for building the native helpers, then run:
+
+```sh
+git clone https://github.com/chenghsj/app-hopper.git
+cd app-hopper
+npm ci
+npm run dev
+```
+
+`npm run dev` builds the native helpers and loads the extension into Raycast for local development. Open **App Hopper** in Raycast, grant the requested permissions, then enable the browser companion if needed. This source installation is separate from a Raycast Store release.
 
 ## Requirements
 
@@ -35,7 +48,7 @@ For manual installation, prepare the local helper from App Hopper first. Then op
 
 The companion reads tab URLs even when Zen's sidebar is hidden. Searching and switching across **all Zen Spaces** additionally requires the separate local workspace bridge.
 
-The bridge is **not included in the XPI or installed by Enable Zen Integration**. This companion release does not distribute an end-user bridge installer. The currently tested bridge is an advanced local setup that changes Zen's AutoConfig startup files and requires a restart; Zen updates may require reinstalling it. Without the bridge, the companion is limited to tabs exposed by Zen's standard API.
+The bridge is **not included in the XPI or installed by Enable Zen Integration**. The repository includes a source-based bridge installer; see [Zen integration](docs/zen-integration.md#local-cross-workspace-bridge). The currently tested bridge is an advanced local setup that changes Zen's AutoConfig startup files and requires a restart; Zen updates may require reinstalling it. Without the bridge, the companion is limited to tabs exposed by Zen's standard API.
 
 ## Migrate from the old Zen companion
 
@@ -48,3 +61,47 @@ Existing Firefox companion installations retain their original ID and can upgrad
 - If the companion is installed but disconnected, run the corresponding setup command in Raycast, choose **Repair Local Helper**, then click the companion toolbar button or restart that browser and check the connection again.
 - The add-on requests `tabs` and `nativeMessaging` to exchange tab titles, URLs and activation requests with the local App Hopper helper. Private-window access stays off unless explicitly granted in the browser.
 - App/window switching and Accessibility-based browser support remain available without the companion. Hidden tab lists are reported as unavailable rather than assigned an invented count.
+
+## Project layout
+
+| Directory    | Contents                                                                  |
+| ------------ | ------------------------------------------------------------------------- |
+| `src/`       | Raycast commands, window search/focus and browser adapters.               |
+| `companion/` | Shared browser companion and Zen-specific workspace bridge.               |
+| `assets/`    | Extension icon, Swift helper sources and companion release configuration. |
+| `scripts/`   | Native builds, packaging, verification and local setup tools.             |
+| `tests/`     | Regression tests and native/browser fixtures.                             |
+| `docs/`      | Browser integration, compatibility and distribution documentation.        |
+
+## Development
+
+Install Apple's Command Line Tools or Xcode, select a working developer directory, then run:
+
+```sh
+npm ci
+npm run dev
+```
+
+`predev` and `prebuild` compile both Apple Silicon and Intel helper slices, combine them into universal binaries, sign them for local use, and prepare `assets/native/manifest.json`. Unchanged helpers are verified and reused. The generated directory is excluded from Git; the Swift sources and build scripts are the source of truth.
+
+```sh
+npm test
+npm run typecheck
+npm run build -- --environment dist
+npm run lint
+npm run verify:native
+```
+
+## Distribution
+
+Local builds use **ad-hoc signing**, which is not Developer ID distribution approval. Before publishing, prepare Developer ID Application-signed helpers:
+
+```sh
+APP_HOPPER_SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' npm run package:native
+npm run build -- --environment dist
+npm run verify:native -- --release
+```
+
+The build preserves an unchanged verified Developer ID package. Changing helper sources requires signing a new package. The publish script refuses helpers that do not have matching sources/checksums, both architectures, valid Developer ID signatures, hardened runtime, and secure timestamps.
+
+Developer ID signing and notarization are separate release steps. The verifier does **not** claim notarization or Gatekeeper acceptance. Complete Apple's notarization process for the actual helper archive and test a downloaded clean installation before publishing; do not treat an ad-hoc local build as a release artifact. See the [compatibility checklist](docs/compatibility.md).
