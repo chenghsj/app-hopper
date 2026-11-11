@@ -16,7 +16,7 @@ A macOS Raycast extension for finding and switching between running applications
 
 ## Install App Hopper from source
 
-Install [Raycast](https://www.raycast.com/) and Node.js 22.20.0 or newer with npm. Install Apple's Command Line Tools (`xcode-select --install`) or Xcode for building the native helpers, then run:
+Install [Raycast](https://www.raycast.com/) and Node.js 24 or newer with npm. Install Apple's Command Line Tools (`xcode-select --install`) or Xcode for building the native helpers, then run:
 
 ```sh
 git clone https://github.com/chenghsj/app-hopper.git
@@ -105,3 +105,9 @@ npm run verify:native -- --release
 The build preserves an unchanged verified Developer ID package. Changing helper sources requires signing a new package. The publish script refuses helpers that do not have matching sources/checksums, both architectures, valid Developer ID signatures, hardened runtime, and secure timestamps.
 
 Developer ID signing and notarization are separate release steps. The verifier does **not** claim notarization or Gatekeeper acceptance. Complete Apple's notarization process for the actual helper archive and test a downloaded clean installation before publishing; do not treat an ad-hoc local build as a release artifact. See the [compatibility checklist](docs/compatibility.md).
+
+## CI and companion releases
+
+Pushes to `main` and pull requests run macOS CI: native/Raycast build, strict typechecks, lint, regression tests, helper verification, and companion/source packaging. CI artifacts are unsigned and are not production installers.
+
+The **Sign and release companion** workflow is manual. Its default build-only mode does not contact Mozilla. To release a new companion, increase `companion/manifest.json` on `main`, open the workflow under Actions, and disable **Build only**. It uses the `WEB_EXT_API_KEY` and `WEB_EXT_API_SECRET` repository Secrets to submit an unlisted version and its matching source archive. See [release automation](docs/release-automation.md) for the complete flow and recovery steps.

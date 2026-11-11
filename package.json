@@ -51,7 +51,8 @@
     "jiti": "^2.7.0",
     "prettier": "^3.9.10",
     "tsx": "^4.23.15",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "web-ext": "10.8.0"
   },
   "scripts": {
     "build:native": "node --import tsx scripts/build-native.ts",
@@ -78,6 +79,7 @@
     "package:companion": "node --import tsx scripts/package-companion.ts",
     "configure:companion-release": "node --import tsx scripts/configure-companion-release.ts",
     "build:privileged": "tsc -p tsconfig.privileged.json",
-    "package:companion-source": "node --import tsx scripts/package-companion-source.ts"
+    "package:companion-source": "node --import tsx scripts/package-companion-source.ts",
+    "lint:companion": "web-ext lint --source-dir dist/companion/extension --self-hosted --warnings-as-errors"
   }
 }

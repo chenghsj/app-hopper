@@ -1,0 +1,82 @@
+name: Sign and release companion
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build only (no Mozilla submission or Release publication)
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: companion-signing
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - name: Plan release and reject repeated versions
+        id: plan
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: node --import tsx scripts/companion-release.ts plan
+      - run: npm run package:companion-source
+      - run: npm run lint:companion
+      - name: Submit extension and matching source to Mozilla
+        if: ${{ !inputs.dry_run }}
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+          SOURCE_ARCHIVE: ${{ steps.plan.outputs.source }}
+        run: |
+          test -n "$WEB_EXT_API_KEY" || { echo "Missing WEB_EXT_API_KEY"; exit 1; }
+          test -n "$WEB_EXT_API_SECRET" || { echo "Missing WEB_EXT_API_SECRET"; exit 1; }
+          npm exec -- web-ext sign --channel unlisted --source-dir dist/companion/extension --artifacts-dir dist/companion/signed --upload-source-code "$SOURCE_ARCHIVE" --approval-timeout 900000 --timeout 300000 --no-config-discovery
+      - name: Verify returned package and prepare release files
+        if: ${{ !inputs.dry_run }}
+        env:
+          DRY_RUN: "false"
+        run: node --import tsx scripts/companion-release.ts prepare
+      - name: Publish signed companion Release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          SIGNED_XPI: ${{ steps.plan.outputs.signed }}
+        run: |
+          gh release create "$TAG" "$SIGNED_XPI" "dist/companion/release/app-hopper-companion-$VERSION-source.zip" dist/companion/release/SHA256SUMS --target "$GITHUB_SHA" --title "App Hopper Companion $VERSION" --notes-file dist/companion/release/release-notes.md
+      - name: Verify anonymous download before pinning
+        if: ${{ !inputs.dry_run }}
+        run: node --import tsx scripts/companion-release.ts verify-download
+      - name: Pin the published companion in App Hopper
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- assets/companion-integration.json
+          git commit -m "Pin companion release $VERSION"
+          gh auth setup-git
+          git push origin HEAD:main
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: companion-release-${{ github.run_id }}
+          path: dist/companion/
+          if-no-files-found: warn
+          retention-days: 14
