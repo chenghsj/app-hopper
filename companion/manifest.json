@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "App Hopper Companion",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Show live Firefox and Zen tab URLs and switch tabs from App Hopper for Raycast.",
   "permissions": ["tabs", "nativeMessaging"],
   "background": {

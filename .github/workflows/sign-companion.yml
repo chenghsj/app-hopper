@@ -6,6 +6,10 @@ on:
         description: Build only (no Mozilla submission or Release publication)
         type: boolean
         default: true
+      publish_release:
+        description: Publish GitHub Release and update App Hopper (disable for sign-only testing)
+        type: boolean
+        default: true
 permissions:
   contents: read
 concurrency:
@@ -48,9 +52,10 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           DRY_RUN: "false"
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
         run: node --import tsx scripts/companion-release.ts prepare
       - name: Publish signed companion Release
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.publish_release }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.plan.outputs.version }}
@@ -59,10 +64,10 @@ jobs:
         run: |
           gh release create "$TAG" "$SIGNED_XPI" "dist/companion/release/app-hopper-companion-$VERSION-source.zip" dist/companion/release/SHA256SUMS --target "$GITHUB_SHA" --title "App Hopper Companion $VERSION" --notes-file dist/companion/release/release-notes.md
       - name: Verify anonymous download before pinning
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.publish_release }}
         run: node --import tsx scripts/companion-release.ts verify-download
       - name: Pin the published companion in App Hopper
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.publish_release }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.plan.outputs.version }}

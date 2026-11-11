@@ -76,11 +76,11 @@ async function main() {
     "dist/companion/release/release-notes.md",
     `# App Hopper Companion ${plan.version}\n\nMozilla-signed companion shared by Firefox and Zen.\n\nInstall App Hopper, run the matching browser integration setup, and confirm installation of the signed XPI. Zen cross-workspace support additionally requires the separate local workspace bridge.\n\nSource, pinned build dependencies and rebuild instructions are included in the source ZIP. SHA256SUMS covers both downloadable packages.\n`,
   );
-  writeFileSync(
-    "assets/companion-integration.json",
+  const pinnedConfig =
     JSON.stringify({ companion: { version: plan.version, xpiUrl: plan.url, sha256: digest(plan.signed) } }, null, 2) +
-      "\n",
-  );
+    "\n";
+  writeFileSync("dist/companion/release/companion-integration.json", pinnedConfig);
+  if (process.env.PUBLISH_RELEASE === "true") writeFileSync("assets/companion-integration.json", pinnedConfig);
   console.log(`Prepared ${plan.tag}; XPI identity, contents and signature metadata match the release build.`);
 }
 main().catch((error: unknown) => {
