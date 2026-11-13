@@ -8,7 +8,7 @@ App Hopper can optionally use a Firefox companion to list current tab titles and
 2. Choose **Enable Firefox Integration**. App Hopper downloads the companion, verifies its pinned SHA-256 and manifest identity/version, sets up the per-user native helper, and opens the downloaded `.xpi` in Firefox.
 3. Confirm installation in Firefox. Firefox verifies Mozilla's signature; App Hopper cannot bypass that check or the confirmation prompt. Return to Raycast and choose **Check Connection**, then refresh the App Hopper list to load current URLs.
 
-This is a self-distributed XPI flow. A public Mozilla Add-ons listing is not required. Mozilla must still sign the XPI using the **unlisted** distribution channel before release.
+This is a self-distributed XPI flow. A public Mozilla Add-ons listing is not required. Every released XPI must be Mozilla-signed using the **unlisted** distribution channel.
 
 The shared Mozilla-signed XPI 1.0.1 is published in the [GitHub Release](https://github.com/chenghsj/app-hopper/releases/tag/companion-v1.0.1). `assets/companion-integration.json` pins its public download URL and SHA-256 for both Firefox and Zen. The unsigned build ZIP is for signing, not end-user installation.
 
@@ -16,7 +16,7 @@ Packaged builds copy the bundled native host into the current user's helper dire
 
 ## Downloads
 
-The reviewed Raycast release pins `{ version, xpiUrl, sha256 }` in `assets/companion-integration.json`. The URL points directly to a hosted signed `.xpi`, rather than a store page. Downloads require HTTPS, including redirects, and are limited to 10 MiB, five redirects, and a 30-second network deadline. The companion's ID and version must match the pinned release. Firefox remains the cryptographic signature verifier.
+Each App Hopper build pins `{ version, xpiUrl, sha256 }` in `assets/companion-integration.json`. The URL points directly to a hosted signed `.xpi`, rather than a store page. Downloads require HTTPS, including redirects, and are limited to 10 MiB, five redirects, and a 30-second network deadline. The companion's ID and version must match the pinned release. Firefox remains the cryptographic signature verifier.
 
 A verified package is cached locally, and checked again before reuse. Failed downloads do not replace an existing cache entry or open Firefox. Temporary files are removed after failure. The cache contains only installation packages, never a tab/URL snapshot.
 
@@ -48,6 +48,8 @@ Tab data is requested on list refresh and sent over local IPC only, without stor
 
 ## Release preparation
 
+Companion 1.0.1 is already published and pinned for both browsers. The signing and hosting steps below apply to future companion versions; reuse the existing signed XPI for installation and acceptance of 1.0.1.
+
 1. Run `npm test`, `npm run lint`, and `npm run build`.
 2. Run `npm run package:firefox`. It writes the shared **unsigned** `app-hopper-companion-<version>.zip` under `dist/companion/` for signing, with `manifest.json` and `background.js` at the archive root.
 3. Validate with Mozilla's `web-ext lint --source-dir dist/companion/extension --warnings-as-errors`.
@@ -62,7 +64,9 @@ For development only, run `npm run build:firefox`, then use Firefox's `about:deb
 
 The bridge tests compile the actual Swift host and execute the actual companion background script against a simulated Firefox API. They exercise adapter → Unix socket → native framing → companion → response, URL changes without tab selection, exact focus, versions, reconnects, malformed input, EOF, and requested shutdown. Download tests use real ZIP fixtures and mocked HTTP responses to check redirects, limits, SHA-256, identity, caching, and failures. Setup tests check download/install/open ordering, unavailable releases, repairs, updates, cancellation, and removal.
 
-The Raycast settings screen and **Repair Local Helper** flow were also verified in the native app: an outdated helper showed a repair entry point, and repair completed with the state **Local helper ready — waiting for the Firefox companion to connect**. No enable action was exposed while the signed download was unconfigured. Mozilla signature acceptance, production hosting, and the actual local-XPI handoff in supported Firefox/macOS versions remain required release checks.
+The Raycast settings screen and **Repair Local Helper** flow were also verified in the native app: an outdated helper showed a repair entry point, and repair completed with the state **Local helper ready — waiting for the Firefox companion to connect**. During that earlier test, no enable action was exposed because the signed download was not yet configured. The signed 1.0.1 XPI is now hosted and pinned; this does not establish browser installation acceptance.
+
+The remaining release checks are the signed-XPI handoff and Firefox confirmation on a clean installation, connection and background URL refresh, exact focus across two windows and moved/closed tabs, restart persistence, update, repair, and removal. Record the Firefox/macOS versions and results. Private-window checks require explicit user permission. See the [compatibility checklist](compatibility.md) for clean-account and downloaded-install checks.
 
 References: [Mozilla self-distribution](https://extensionworkshop.com/documentation/publish/self-distribution/), [native messaging](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging).
 

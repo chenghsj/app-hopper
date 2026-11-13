@@ -2,7 +2,7 @@
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "app-hopper",
   "title": "App Hopper",
-  "description": "Quickly find and switch between running applications.",
+  "description": "Find and switch between running apps, windows, and browser tabs.",
   "icon": "app-hopper-icon-512.png",
   "author": "chenghsj",
   "platforms": [
@@ -18,7 +18,7 @@
       "name": "app-hopper",
       "title": "App Hopper",
       "subtitle": "Quickly switch between running apps",
-      "description": "Search and switch between currently running applications on macOS.",
+      "description": "Search running apps, windows, and browser tabs on macOS and switch to the result you need.",
       "mode": "view",
       "icon": "app-hopper-icon-512.png"
     },
@@ -68,7 +68,8 @@
     "fix-lint": "ray lint --fix",
     "lint": "ray lint",
     "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",
-    "publish": "node --import tsx scripts/verify-native.ts --release && npx @raycast/api@latest publish",
+    "publish": "npm run verify:store && npx @raycast/api@latest publish",
+    "verify:store": "node --import tsx scripts/verify-store.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tooling.json && tsc --noEmit -p tsconfig.companion.json && tsc --noEmit -p tsconfig.privileged.json",
     "build:firefox": "node --import tsx scripts/build-companion.ts",
     "build:zen": "node --import tsx scripts/build-companion.ts --zen",

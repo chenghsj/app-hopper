@@ -23,6 +23,8 @@ No browsing-history database or session-restore file is read. Tab data travels o
 
 ## Release
 
+The current 1.0.1 release is already signed, hosted, and pinned. The following steps prepare a future companion version; installation acceptance uses the existing release.
+
 `npm run package:companion` creates the single `dist/companion/app-hopper-companion-<version>.zip` for Mozilla signing. The older `package:zen` and `package:firefox` commands are aliases for this same artifact. After obtaining an unlisted signed XPI and hosting it at a direct HTTPS URL, run:
 
 ```sh
@@ -62,10 +64,11 @@ sandbox and extension signature checks remain enabled. Zen updates may remove th
 files; check status and reinstall after an update if necessary. This integration
 uses Zen internals and requires compatibility checks after browser changes.
 
-The companion must be loaded separately. The current development companion is a
-temporary add-on and disappears when Zen restarts. Reload it from
-`about:debugging#/runtime/this-firefox`; no Console script is required. This bridge
-does not turn an unsigned temporary companion into a permanent signed add-on.
+The companion must be installed separately. Use the shared signed XPI for a
+persistent installation. If using a temporary development add-on, reload it from
+`about:debugging#/runtime/this-firefox` after restarting Zen; no Console script is
+required. This bridge does not turn an unsigned temporary companion into a
+permanent signed add-on.
 
 ### Startup and workspace acceptance
 
@@ -94,7 +97,7 @@ errors even when no Browser Console logger exists. Regression coverage lives in
 Remove the old **App Hopper Zen Companion** (`app-hopper-zen@chenghsj`) from Zen.
 Prepare/repair the Zen local helper using the updated App Hopper, then load
 `dist/companion/extension/manifest.json` temporarily or install the shared signed
-XPI when available. The shared companion retains Firefox's existing ID
+XPI. The shared companion retains Firefox's existing ID
 `app-hopper-firefox@chenghsj`; existing Firefox installations upgrade in place.
 Update the local workspace bridge using `node --import tsx scripts/zen-workspace-bridge.ts install`
 and restart Zen so it targets the shared identity. Do not load both companions.

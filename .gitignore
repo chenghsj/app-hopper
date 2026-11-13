@@ -3,7 +3,8 @@
 # dependencies
 /node_modules
 /dist
-/assets/native/
+# Native helpers and their manifest are included for Store review. Only staging files are ignored.
+/assets/native/*.tmp
 
 # Raycast specific files
 raycast-env.d.ts

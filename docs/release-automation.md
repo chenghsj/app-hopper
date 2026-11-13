@@ -2,7 +2,7 @@
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pushes to `main`, pull requests and manual dispatch. It uses a standard macOS runner with Node 24. No signing credentials are passed to CI. It builds ad-hoc universal native helpers and the Raycast extension, checks types/lint/tests, verifies helper artifacts, and uploads unsigned companion and reviewer-source ZIPs for seven days.
+`.github/workflows/ci.yml` runs on pushes to `main`, pull requests and manual dispatch. It uses a standard macOS runner with Node 24. No signing credentials are passed to CI. It prepares ad-hoc universal native helpers and the Raycast extension, checks types/lint/tests, verifies helper artifacts and tracked Store metadata/screenshots, and uploads unsigned companion and reviewer-source ZIPs for seven days. Valid bundled helpers are reused; stale or missing helpers are rebuilt.
 
 CI does not grant macOS Accessibility permission or validate live browser UI, installed-extension behavior, Developer ID signing, notarization or Raycast Store acceptance. Those require separate acceptance.
 

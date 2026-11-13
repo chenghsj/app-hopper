@@ -2,12 +2,14 @@
 
 ## Current evidence
 
-| Environment               | Evidence                                                                            | Remaining acceptance                                             |
-| ------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| macOS 27.2, Apple Silicon | Local Raycast workflows and automated regression suite                              | Clean user account and downloaded release installation           |
-| Intel helper slices       | Cross-compilation, universal-binary architecture checks, code signature validation  | Execution on an Intel Mac                                        |
-| Other macOS versions      | Helpers compile with a macOS 13.0 deployment target and guard newer activation APIs | Full window/tab and permission workflows on each claimed version |
-| Windows / Linux           | Not supported                                                                       | No support claimed                                               |
+| Environment                 | Evidence                                                                            | Remaining acceptance                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| macOS 27.2, Apple Silicon   | Local Raycast workflows and automated regression suite                              | Clean user account and downloaded release installation                                |
+| Intel helper slices         | Cross-compilation, universal-binary architecture checks, code signature validation  | Execution on an Intel Mac                                                             |
+| Other macOS versions        | Helpers compile with a macOS 13.0 deployment target and guard newer activation APIs | Full window/tab and permission workflows on each claimed version                      |
+| Firefox/Zen companion 1.0.1 | Published signed XPI; shared download URL and SHA-256 configured                    | Clean signed-XPI installation, browser confirmation, restart, update, repair, removal |
+| Zen workspace bridge        | Zen 1.24.1b scratch-profile startup and cross-workspace activation passed           | Current daily-use profile after restart; repeat after Zen updates                     |
+| Windows / Linux             | Not supported                                                                       | No support claimed                                                                    |
 
 Raycast's own system requirement also applies and can be newer than the helpers' deployment target. Do not advertise a minimum supported macOS version based solely on a compiler target.
 
@@ -31,6 +33,6 @@ Use a clean user account or another Mac; do not copy this developer account's pe
 4. Verify single-window app Space labels, multi-window app omission, per-window/tab labels, and unknown Spaces across multiple displays and full-screen windows.
 5. Install a supported browser outside `/Applications` and verify its icons, navigation, and exact tab focus.
 6. Repeat on each claimed macOS version and on both Intel and Apple Silicon hardware. Rosetta execution alone is not Intel hardware acceptance.
-7. Check Developer ID signatures, complete notarization of the actual helper archive, and confirm downloaded-artifact Gatekeeper acceptance. `verify:native` checks structure/signatures, not notarization.
+7. Verify the helpers included in the actual Store download and confirm their execution under the system's normal trust policy. Store submission checks source hashes, checksums, both architectures, and code signatures; it does not establish Gatekeeper acceptance. If distributing a separate Developer ID-signed archive, complete its notarization and downloaded-artifact acceptance independently.
 
 Reference: [Apple's notarization workflow](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).

@@ -30,6 +30,7 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run verify:native
+      - run: npm run verify:store
       - run: npm run build:privileged
       - run: npm run package:companion-source
       - run: npm run lint:companion
