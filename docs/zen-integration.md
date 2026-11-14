@@ -4,7 +4,7 @@ The optional Zen companion supplies live tab titles, URLs and IDs through WebExt
 
 ## Setup
 
-Run **Set up Zen Integration** in Raycast, or choose it from a Zen row in App Hopper. A configured signed release provides **Enable Zen Integration**, signature-checked installation in Zen, version checks, update, repair and removal. Firefox and Zen use the same companion identity and signed XPI. The companion detects Zen runtime metadata to select the Zen native host.
+Open **App Hopper**, select Zen, then press **⌘K** and choose **Set up Zen Integration**. A configured signed release provides **Enable Zen Integration**, signature-checked installation in Zen, version checks, update, repair and removal. Firefox and Zen use the same companion identity and signed XPI. The companion detects Zen runtime metadata to select the Zen native host.
 
 The shared signed companion 1.0.1 is available from the [GitHub Release](https://github.com/chenghsj/app-hopper/releases/tag/companion-v1.0.1), with URL and SHA-256 pinned in `assets/companion-integration.json`. **Prepare Local Helper** registers the native host without installing an add-on.
 
@@ -19,7 +19,7 @@ For development, run `npm run build:zen`, prepare the local helper, then load `d
 - Each profile gets a random connection session. Window and tab IDs include that session; focus requests stay in the selected browser's socket directory. Repair/removal touches only that browser's files and helpers.
 - Unconnected profiles retain native/Accessibility windows. Ambiguous native/companion matches remain separate rather than discarding windows.
 
-No browsing-history database or session-restore file is read. Tab data travels only over local IPC and is not persisted. Without the companion, sidebar-hidden windows report **Tab List Unavailable** rather than an invented tab count. With the companion, background URLs and switching do not depend on the sidebar. Cross-workspace activation and private windows require separate real-browser acceptance; the standard API returns browser tabs, not Zen workspace labels.
+No browsing-history database or session-restore file is read. The companion sends current tab data over local IPC. Raycast caches the latest search snapshot, including tab titles and URLs, locally for the next launch; refresh checks current targets. Without the companion, sidebar-hidden windows report **Tab List Unavailable** rather than an invented tab count. With the companion, background URLs and switching do not depend on the sidebar. Cross-workspace activation and private windows require separate real-browser acceptance; the standard API returns browser tabs, not Zen workspace labels.
 
 ## Release
 
@@ -37,7 +37,7 @@ This configures the same download for Firefox and Zen. Then rebuild App Hopper. 
 
 The development companion was loaded through Zen's temporary add-on picker after preparing its helper from Raycast. On the installed Zen 1.24.1b, with Compact Mode's sidebar still hidden, the live adapter returned one window and three tabs, with URLs for all three and no duplicate unavailable-window row. Raycast showed **Connected — companion 1.0.0**, displayed the three tabs, matched `google.com`, and successfully activated the corresponding Google tab through the companion.
 
-This validates the local temporary-add-on path only. The temporary add-on is removed when Zen restarts. A production signed-XPI installation, restart persistence, private-window access and full cross-workspace activation are not established by this smoke test.
+That earlier smoke test validates the temporary-add-on path only. On 2026-11-13, the daily-use Zen 1.24.1b profile with the installed signed companion 1.0.1 also passed normal restart/reconnection, background-URL search, and cross-workspace activation in both directions through App Hopper. The installed XPI checksum matched the pinned release. See the [local acceptance record](compatibility.md#local-browser-acceptance-2026-11-13). Clean first-install confirmation, update, repair/removal, and private-window access remain separate checks.
 
 ## Local cross-workspace bridge
 
@@ -84,7 +84,7 @@ this test.
 On Zen 1.24.1b the test passed. After installing the same source in the original
 Zen, its unmodified executable also completed a separate headless screenshot
 startup check with a fresh profile (exit 0). Installed/source hashes matched.
-Acceptance in the user's current profile after their next restart is separate.
+The user's current profile also passed normal restart and bidirectional cross-workspace activation through Raycast on 2026-11-13, with installed companion 1.0.1. See the [local acceptance record](compatibility.md#local-browser-acceptance-2026-11-13).
 
 The initial loader prevented startup and was removed. The replacement uses the
 built-in AutoConfig Services global (this build has no Services.sys.mjs), obtains

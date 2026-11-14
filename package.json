@@ -21,20 +21,6 @@
       "description": "Search running apps, windows, and browser tabs on macOS and switch to the result you need.",
       "mode": "view",
       "icon": "app-hopper-icon-512.png"
-    },
-    {
-      "name": "set-up-firefox",
-      "title": "Set up Firefox Integration",
-      "description": "Set up the optional Firefox companion for live background tab URLs.",
-      "mode": "view",
-      "icon": "app-hopper-icon-512.png"
-    },
-    {
-      "name": "set-up-zen",
-      "title": "Set up Zen Integration",
-      "description": "Set up the Zen companion for background tab URLs without showing the sidebar.",
-      "mode": "view",
-      "icon": "app-hopper-icon-512.png"
     }
   ],
   "tools": [],
@@ -65,6 +51,7 @@
     "configure:firefox-release": "node --import tsx scripts/configure-companion-release.ts",
     "predev": "npm run build:native",
     "dev": "ray develop",
+    "preview:loading": "npm run build && node --import tsx scripts/preview-loading.ts",
     "fix-lint": "ray lint --fix",
     "lint": "ray lint",
     "prepublishOnly": "echo \"\\n\\nIt seems like you are trying to publish the Raycast extension to npm.\\n\\nIf you did intend to publish it to npm, remove the \\`prepublishOnly\\` script and rerun \\`npm publish\\` again.\\nIf you wanted to publish it to the Raycast Store instead, use \\`npm run publish\\` instead.\\n\\n\" && exit 1",

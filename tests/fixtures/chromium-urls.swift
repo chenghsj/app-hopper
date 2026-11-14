@@ -19,7 +19,7 @@ func stringAttr(_ element: AXUIElement, _ attribute: String) -> String {
   if attribute == kAXDocumentAttribute { return element.url }
   return "AXStandardWindow"
 }
-func collectChromiumTabs(_ window: AXUIElement, out: inout [AXUIElement]) { out = window.tabs }
+func collectChromiumTabs(_ window: AXUIElement, maxDepth: Int = 12, out: inout [AXUIElement]) { out = window.tabs }
 func readTabInfo(_ tab: AXUIElement) -> (title: String, selected: Bool, customUrl: String) {
   (tab.title, tab.selected, tab.url)
 }

@@ -27,6 +27,35 @@ async function loadStatus(browserId: GeckoBrowserId) {
   return { installed, registered, connected, versions, release };
 }
 
+type IntegrationStatus = Awaited<ReturnType<typeof loadStatus>>;
+
+function connectionState(data: IntegrationStatus | undefined, appName: string) {
+  if (!data) return { status: "Checking connection…", hint: "" };
+  if (data.connected) {
+    if (!data.installed)
+      return {
+        status: `Connected for this ${appName} session. Repair the local helper before restarting ${appName}.`,
+        hint: "",
+      };
+    const versions = [...new Set(data.versions)].join(", ");
+    return { status: `Connected${versions ? ` — companion ${versions}` : ""}.`, hint: "" };
+  }
+  if (data.installed)
+    return { status: "Not connected.", hint: "Click the companion's toolbar button, then check the connection." };
+  if (data.registered)
+    return { status: "Local helper needs repair.", hint: "Choose Repair Local Helper to reconnect." };
+  const hint = data.release
+    ? `Choose Enable ${appName} Integration, then confirm installation in ${appName}.`
+    : "A signed companion download is not available yet.";
+  return { status: "Not enabled.", hint };
+}
+
+function companionActionTitle(appName: string, updateAvailable: boolean, connected: boolean) {
+  if (updateAvailable) return `Update ${appName} Companion`;
+  if (connected) return `Reinstall ${appName} Companion`;
+  return `Enable ${appName} Integration`;
+}
+
 export function FirefoxIntegrationView({ browserId = "firefox" }: { browserId?: GeckoBrowserId } = {}) {
   const { appName, bundleId } = geckoConfig(browserId);
   const { data, error, isLoading, revalidate } = useCachedPromise(loadStatus, [browserId]);
@@ -100,27 +129,7 @@ export function FirefoxIntegrationView({ browserId = "firefox" }: { browserId?: 
 
   const update = data?.release && hasFirefoxCompanionUpdate(data.versions, data.release) ? data.release : null;
   const updateAvailable = update !== null;
-  const status = !data
-    ? "Checking connection…"
-    : data.connected
-      ? data.installed
-        ? `Connected${data.versions.length ? ` — companion ${[...new Set(data.versions)].join(", ")}` : ""}.`
-        : `Connected for this ${appName} session. Repair the local helper before restarting ${appName}.`
-      : data.installed
-        ? "Not connected."
-        : data.registered
-          ? "Local helper needs repair."
-          : "Not enabled.";
-  const hint =
-    !data || data.connected
-      ? ""
-      : data.installed
-        ? "Click the companion's toolbar button, then check the connection."
-        : data.registered
-          ? "Choose Repair Local Helper to reconnect."
-          : data.release
-            ? `Choose Enable ${appName} Integration, then confirm installation in ${appName}.`
-            : "A signed companion download is not available yet.";
+  const { status, hint } = connectionState(data, appName);
   const updateHint = update ? `Companion ${update.version} is available. Choose Update ${appName} Companion.` : "";
   const markdown = error
     ? `# ${appName} Integration\n\nCould not check integration: ${error instanceof Error ? error.message : String(error)}`
@@ -135,13 +144,7 @@ export function FirefoxIntegrationView({ browserId = "firefox" }: { browserId?: 
         <ActionPanel>
           {data?.release && (
             <Action
-              title={
-                updateAvailable
-                  ? `Update ${appName} Companion`
-                  : data.connected
-                    ? `Reinstall ${appName} Companion`
-                    : `Enable ${appName} Integration`
-              }
+              title={companionActionTitle(appName, updateAvailable, data.connected)}
               icon={Icon.Download}
               onAction={enable}
             />

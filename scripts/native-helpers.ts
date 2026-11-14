@@ -2,12 +2,15 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
-import config from "../assets/native-helpers.json";
+import {
+  nativeHelpers as config,
+  nativeHelperSourceHash as sourceHash,
+  type NativeHelper,
+} from "../src/native-helper-catalog";
 
 const root = path.resolve(__dirname, "..");
 const assets = path.join(root, "assets");
 
-type NativeHelper = (typeof config.helpers)[number];
 type NativeEntry = { file: string; sourceHash: string; sha256: string };
 export type NativeManifest = {
   version: 1;
@@ -16,13 +19,6 @@ export type NativeManifest = {
   helpers: Record<string, NativeEntry>;
 };
 const directory = path.join(assets, "native");
-
-function sourceHash(helper: NativeHelper) {
-  const source = [helper.source, ...helper.additionalSources]
-    .map((file) => readFileSync(path.join(assets, file), "utf8"))
-    .join("\0");
-  return createHash("sha256").update(source).digest("hex").slice(0, 12);
-}
 
 function digest(file: string) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
@@ -38,7 +34,7 @@ function verifyHelper(
   release = false,
   helperDirectory = directory,
 ) {
-  const hash = sourceHash(helper);
+  const hash = sourceHash(helper, assets);
   if (!entry || entry.sourceHash !== hash || entry.file !== `${helper.name}-${hash}`) {
     throw new Error(`${helper.name}: bundled helper is missing or does not match its sources`);
   }

@@ -1,4 +1,35 @@
 import type { AppGroup, RunningAppMetadata, Window } from "./windows";
+import { groupApplicationsBySpace } from "./app-space-groups";
+import { getAppBrowser, type AppWindowData } from "./app-window-evidence";
+
+export type AppListOrder = "recent" | "name" | "type" | "space";
+
+export function arrangeApplications(apps: AppGroup[], order: AppListOrder, data: AppWindowData) {
+  switch (order) {
+    case "space":
+      return groupApplicationsBySpace(apps, data);
+    case "name":
+      return [
+        {
+          id: "all",
+          title: undefined,
+          apps: [...apps].sort((a, b) =>
+            a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }),
+          ),
+        },
+      ];
+    case "type": {
+      const browserApps = apps.filter((app) => getAppBrowser(app));
+      const otherApps = apps.filter((app) => !getAppBrowser(app));
+      return [
+        { id: "browsers", title: "Browsers", apps: browserApps },
+        { id: "applications", title: "Applications", apps: otherApps },
+      ].filter((section) => section.apps.length > 0);
+    }
+    default:
+      return [{ id: "all", title: undefined, apps }];
+  }
+}
 
 /** All apps share one list; the same grouping is used for browsing and searching. */
 export function groupApplications(

@@ -11,9 +11,14 @@ test("Firefox setup installs per-user files atomically, repairs them, and reuses
   let compiles = 0;
   const load = createLoader({
     "node:os": { homedir: () => home },
+    "../helpers/native-helper": {
+      resolveNativeHelper: () => ({
+        sourceHash: "0123456789ab",
+        sourcePaths: [path.resolve("assets/firefox-bridge.swift")],
+      }),
+    },
     "../helpers/applescript": {
       getRaycastPaths: () => ({ assetsPath: path.resolve("assets") }),
-      findBundledHelper: () => undefined,
       execBinary: async (binary, args) => {
         assert.equal(binary, "/usr/bin/swiftc");
         compiles++;
@@ -62,9 +67,14 @@ test("failed Firefox helper compilation leaves no manifest or temporary executab
   let fail = true;
   const load = createLoader({
     "node:os": { homedir: () => home },
+    "../helpers/native-helper": {
+      resolveNativeHelper: () => ({
+        sourceHash: "0123456789ab",
+        sourcePaths: [path.resolve("assets/firefox-bridge.swift")],
+      }),
+    },
     "../helpers/applescript": {
       getRaycastPaths: () => ({ assetsPath: path.resolve("assets") }),
-      findBundledHelper: () => undefined,
       execBinary: async (_binary, args) => {
         await fs.writeFile(args.at(-1), "partial binary");
         if (fail) throw new Error("Compiler unavailable");
@@ -85,9 +95,14 @@ test("removing Firefox integration stops helpers after unregistering and preserv
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const load = createLoader({
     "node:os": { homedir: () => home },
+    "../helpers/native-helper": {
+      resolveNativeHelper: () => ({
+        sourceHash: "0123456789ab",
+        sourcePaths: [path.resolve("assets/firefox-bridge.swift")],
+      }),
+    },
     "../helpers/applescript": {
       getRaycastPaths: () => ({ assetsPath: path.resolve("assets") }),
-      findBundledHelper: () => undefined,
       execBinary: async (_bin, args) => fs.writeFile(args.at(-1), "test executable"),
     },
   });
@@ -128,9 +143,14 @@ test("Zen setup and removal keep Firefox manifests and helper files intact", asy
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const integration = createLoader({
     "node:os": { homedir: () => home },
+    "../helpers/native-helper": {
+      resolveNativeHelper: () => ({
+        sourceHash: "0123456789ab",
+        sourcePaths: [path.resolve("assets/firefox-bridge.swift")],
+      }),
+    },
     "../helpers/applescript": {
       getRaycastPaths: () => ({ assetsPath: path.resolve("assets") }),
-      findBundledHelper: () => undefined,
       execBinary: async (_binary, args) => fs.writeFile(args.at(-1), "compiled host"),
     },
   })("src/browsers/firefox-integration.ts");

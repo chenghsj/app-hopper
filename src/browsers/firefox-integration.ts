@@ -1,9 +1,10 @@
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { chmod, copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { geckoConfig, type GeckoBrowserId } from "./gecko-config";
-import { execBinary, findBundledHelper, getRaycastPaths } from "../helpers/applescript";
+import { execBinary } from "../helpers/applescript";
+import { resolveNativeHelper } from "../helpers/native-helper";
 
 export const FIREFOX_DIRECTORY = path.join(homedir(), "Library/Application Support/raycast-yabai-firefox");
 export const FIREFOX_HOST_NAME = "app_hopper.firefox";
@@ -17,9 +18,7 @@ export function geckoDirectory(id: GeckoBrowserId = "firefox") {
 
 function integrationPaths(id: GeckoBrowserId = "firefox") {
   const config = geckoConfig(id);
-  const { assetsPath } = getRaycastPaths();
   return {
-    source: path.join(assetsPath ?? path.resolve("assets"), "firefox-bridge.swift"),
     manifestPath: path.join(
       homedir(),
       "Library/Application Support/Mozilla/NativeMessagingHosts",
@@ -31,8 +30,8 @@ function integrationPaths(id: GeckoBrowserId = "firefox") {
 async function expectedHost(id: GeckoBrowserId = "firefox") {
   const config = geckoConfig(id);
   const paths = integrationPaths(id);
-  const source = await readFile(paths.source, "utf8");
-  const hash = createHash("sha256").update(source).digest("hex").slice(0, 12);
+  const helper = resolveNativeHelper("firefox-bridge", geckoDirectory(id));
+  const hash = helper.sourceHash;
   const binary = path.join(geckoDirectory(id), `${config.binaryPrefix}-${hash}`);
   const manifest = {
     name: config.hostName,
@@ -41,7 +40,7 @@ async function expectedHost(id: GeckoBrowserId = "firefox") {
     type: "stdio",
     allowed_extensions: [config.addonId],
   };
-  return { ...paths, binary, manifest, bundledBinary: findBundledHelper("firefox-bridge", hash) };
+  return { ...paths, binary, manifest, bundledBinary: helper.bundledBinaryPath, sources: helper.sourcePaths };
 }
 
 async function isExecutable(file: string) {
@@ -82,7 +81,7 @@ export async function installFirefoxHost(id: GeckoBrowserId = "firefox"): Promis
         if (expected.bundledBinary) {
           await copyFile(expected.bundledBinary, temp);
         } else {
-          await execBinary("/usr/bin/swiftc", ["-module-cache-path", cache, "-O", expected.source, "-o", temp], {
+          await execBinary("/usr/bin/swiftc", ["-module-cache-path", cache, "-O", ...expected.sources, "-o", temp], {
             timeout: 60000,
           });
         }

@@ -32,6 +32,147 @@ const items = (view: ReturnType<typeof renderer>, tree: TestNode) =>
 const action = (view: ReturnType<typeof renderer>, row: TestNode, title: string) =>
   findAll(row, (node) => node.type === view.ui.Action && node.props.title === title)[0];
 
+test("cold loading stays in the list and never claims there are no apps or search results", () => {
+  let isLoading = true;
+  const view = renderer(snapshot([]), {
+    "./use-window-search": {
+      useWindowSearch: () => ({ ...snapshot([]), isLoading, setWindows() {}, refreshWindows() {} }),
+    },
+  });
+  for (const query of ["", "notes"]) {
+    view.render().props.onSearchTextChange(query);
+    const loading = view.render();
+    assert.equal(loading.type, view.ui.List);
+    assert.equal(loading.props.isLoading, false, "Raycast must not hide the loading EmptyView behind its loading bar");
+    const empty = findAll(loading, (node) => node.type === view.ui.List.EmptyView)[0];
+    assert.equal(empty.props.title, "Getting things ready…");
+    assert.equal(empty.props.icon, view.ui.Icon.AppWindow);
+  }
+  isLoading = false;
+  const noResults = findAll(view.render(), (node) => node.type === view.ui.List.EmptyView)[0];
+  assert.equal(noResults.props.title, "No Results");
+  assert.match(noResults.props.description, /Try another/);
+  view.render().props.onSearchTextChange("");
+  const noApps = findAll(view.render(), (node) => node.type === view.ui.List.EmptyView)[0];
+  assert.equal(noApps.props.title, "No Running Applications");
+  assert.match(noApps.props.description, /refresh/);
+});
+
+test("cached applications remain visible while their snapshot refreshes", () => {
+  const data = snapshot([native(1, "Notes")]);
+  const view = renderer(data, {
+    "./use-window-search": {
+      useWindowSearch: () => ({ ...data, isLoading: true, setWindows() {}, refreshWindows() {} }),
+    },
+  });
+  const tree = view.render();
+  assert.equal(tree.props.isLoading, true);
+  assert.deepEqual(
+    items(view, tree).map((row) => row.props.title),
+    ["Notes"],
+  );
+  assert.equal(findAll(tree, (node) => node.type === view.ui.List.EmptyView).length, 0);
+});
+
+test("background updates keep selected app positions and never replace a vanished target with another action", () => {
+  const data = { ...snapshot([native(1, "Notes"), native(2, "Editor")]), applicationOrder: [1, 2] };
+  const view = renderer(data);
+  const first = view.render();
+  const selected = items(view, first)[0].props.id;
+  first.props.onSelectionChange(selected);
+  data.applicationOrder = [2, 3, 1];
+  data.windows = [native(1, "Notes"), native(2, "Editor"), native(3, "Mail")];
+  const updated = view.render();
+  assert.deepEqual(
+    items(view, updated).map((row) => row.props.title),
+    ["Notes", "Editor", "Mail"],
+  );
+  assert.equal(updated.props.selectedItemId, selected);
+  data.windows = [native(2, "Editor"), native(3, "Mail")];
+  const missing = view.render();
+  const placeholder = items(view, missing)[0];
+  assert.equal(placeholder.props.id, selected);
+  assert.equal(placeholder.props.subtitle, "No longer available");
+  assert.equal(action(view, placeholder, "Activate Application"), undefined);
+  assert.equal(missing.props.selectedItemId, selected);
+  action(view, placeholder, "Refresh List").props.onAction();
+  const refreshed = view.render();
+  assert.deepEqual(
+    items(view, refreshed).map((row) => row.props.title),
+    ["Editor", "Mail"],
+  );
+  assert.equal(refreshed.props.selectedItemId, undefined);
+});
+
+test("cached rows stay visible while setup is checked but cannot activate until ready", () => {
+  let kind = "checking";
+  const enabled: boolean[] = [];
+  const data = snapshot([native(1, "Notes")]);
+  const view = renderer(data, {
+    "./runtime-environment": { useRuntimeEnvironment: () => ({ status: { kind }, revalidate() {} }) },
+    "./use-window-search": {
+      useWindowSearch: (value) => {
+        enabled.push(value);
+        return { ...data, isLoading: false, refreshWindows() {}, setWindows() {} };
+      },
+    },
+  });
+  const checking = view.render();
+  assert.deepEqual(
+    items(view, checking).map((row) => row.props.title),
+    ["Notes"],
+  );
+  assert.equal(findAll(checking, (node) => node.type === view.ui.List.EmptyView).length, 0);
+  assert.equal(items(view, checking)[0].props.actions, undefined);
+  assert.equal(enabled.at(-1), false);
+  checking.props.onSearchTextChange("Notes window");
+  const cachedSearch = items(view, view.render());
+  assert.equal(cachedSearch.length, 1);
+  assert.equal(
+    cachedSearch[0].props.actions,
+    undefined,
+    "cached window results cannot focus before permission is checked",
+  );
+  view.render().props.onSearchTextChange("");
+  kind = "ready";
+  const ready = view.render();
+  assert.deepEqual(
+    items(view, ready).map((row) => row.props.title),
+    ["Notes"],
+  );
+  assert(action(view, items(view, ready)[0], "Activate Application"));
+  assert.equal(enabled.at(-1), true);
+  kind = "accessibility";
+  assert.match(view.render().props.markdown, /Allow Accessibility Access/);
+  assert.equal(enabled.at(-1), false);
+});
+
+test("the local loading preview stays visible with cached apps and never starts window discovery", () => {
+  const data = snapshot([native(1, "Notes")]);
+  const enabled: boolean[] = [];
+  const view = renderer(
+    data,
+    {
+      "./use-window-search": {
+        useWindowSearch: (value) => {
+          enabled.push(value);
+          return { ...data, isLoading: false };
+        },
+      },
+    },
+    "src/app-hopper.tsx",
+    "default",
+    { launchContext: { preview: "loading" } },
+  );
+  for (let i = 0; i < 2; i++) {
+    const tree = view.render();
+    assert.equal(tree.props.isLoading, false);
+    assert.equal(items(view, tree).length, 0);
+    assert.equal(findAll(tree, (node) => node.type === view.ui.List.EmptyView)[0].props.title, "Getting things ready…");
+  }
+  assert.deepEqual(enabled, [false, false]);
+});
+
 test("root apps share one MRU list across browser, minimized, hidden, and windowless states", () => {
   const view = renderer(
     snapshot(
@@ -222,6 +363,99 @@ test("a browser with no tab windows offers the app action rather than an empty d
   assert.equal(findAll(row, (node) => node.type === view.ui.Action.Push).length, 0);
 });
 
+test("windowless Firefox and Zen retain integration setup in the app list and app-name search", () => {
+  const IntegrationAction = () => {};
+  for (const [name, browserId] of [
+    ["Firefox", "firefox"],
+    ["Zen", "zen"],
+  ]) {
+    const view = renderer(
+      snapshot([], {
+        applications: [{ pid: 1, localizedName: name, bundlePath: `/Applications/${name}.app` }],
+        browserCounts: { [browserId]: { windows: 0 } },
+        axWindowsByPid: { 1: [] },
+      }),
+      { "./firefox-integration": { FirefoxIntegrationAction: IntegrationAction } },
+    );
+    for (const query of ["", name]) {
+      view.render().props.onSearchTextChange(query);
+      const [row] = items(view, view.render());
+      assert(action(view, row, "Show Application"));
+      const [integration] = findAll(row, (node) => node.type === IntegrationAction);
+      assert(integration, `${name} should offer integration setup without an open window`);
+      assert.equal(integration.props.browserId, browserId);
+    }
+  }
+});
+
+test("browsers missing native windows keep AX navigation and focus the chosen window", async () => {
+  const { loadWindowData } = createLoader({})("src/window-data.ts");
+  const IntegrationAction = () => {};
+  for (const name of ["Safari", "Google Chrome", "Firefox", "Zen"]) {
+    const application = { pid: 20, localizedName: name, bundlePath: `/Applications/${name}.app` };
+    const axWindows = [
+      { pid: 20, index: 1, title: "First", subrole: "AXStandardWindow" },
+      { pid: 20, index: 2, title: "Second", subrole: "AXStandardWindow" },
+    ];
+    const snapshots: MockValue[] = [];
+    await loadWindowData((data: MockValue) => snapshots.push(data), {
+      queryWindows: async () => [],
+      getRunningApplications: async () => [application],
+      getRunningApplicationMetadata: async () => ({}),
+      queryAXWindows: async () => axWindows,
+      getBrowserSummary: async () => {
+        throw new Error("Unexpected browser query");
+      },
+    });
+    const focused: MockValue[] = [];
+    const view = renderer(snapshots.at(-1), {
+      "./windows": { raiseAXWindow: async (window: MockValue) => focused.push(window) },
+      "./firefox-integration": { FirefoxIntegrationAction: IntegrationAction },
+    });
+    for (const query of ["", name]) {
+      view.render().props.onSearchTextChange(query);
+      const [row] = items(view, view.render());
+      assert.equal(row.props.subtitle, "2 windows", name);
+      assert.equal(action(view, row, "Show Application"), undefined, name);
+      const [push] = findAll(row, (node) => node.type === view.ui.Action.Push && node.props.title === "Show Windows");
+      assert(push, `${name} must expose its AX windows`);
+      const target = push.props.target;
+      const child = renderer({}, {}, "src/app-windows.tsx", "AXWindowsView", target.props);
+      const windows = items(child, child.render());
+      assert.deepEqual(
+        windows.map((window) => window.props.title),
+        ["First", "Second"],
+      );
+      await action(child, windows[1], "Focus Window").props.onAction();
+      assert.equal(focused.at(-1), axWindows[1], `${name} must focus the selected AX target`);
+      if (name === "Firefox" || name === "Zen") {
+        const [integration] = findAll(row, (node) => node.type === IntegrationAction);
+        assert.equal(integration?.props.browserId, name.toLowerCase());
+      }
+    }
+  }
+});
+
+test("resolved browser data keeps browser navigation ahead of AX fallback without native windows", () => {
+  const browserWindows = [{ id: "session:1", title: "Work", tabs: [] }];
+  for (const data of [{ browserCounts: { firefox: { windows: 1 } } }, { browserTabs: { firefox: browserWindows } }]) {
+    const view = renderer(
+      snapshot([], {
+        applications: [{ pid: 20, localizedName: "Firefox", bundlePath: "/Applications/Firefox.app" }],
+        axWindowsByPid: { 20: [{ pid: 20, index: 1, title: "Work" }] },
+        ...data,
+      }),
+    );
+    const [row] = items(view, view.render());
+    assert.equal(action(view, row, "Focus Window"), undefined);
+    const [push] = findAll(
+      row,
+      (node) => node.type === view.ui.Action.Push && node.props.title === "Show Browser Tabs and Windows",
+    );
+    assert(push, "a browser scan or companion result must retain browser navigation");
+  }
+});
+
 test("application enrichment publishes independently and checks AX only for apps missing native windows", async () => {
   const { loadWindowData } = createLoader({})("src/window-data.ts");
   const snapshots: MockValue[] = [],
@@ -279,8 +513,9 @@ test("browser window state follows native window IDs and never guesses a bridge 
     { id: "20", title: "Second", tabs: [] },
     { id: "10", title: "First", tabs: [] },
     { id: "session:10", title: "Bridge", tabs: [] },
+    { id: "session:20", nativeWindowId: "20", title: "Reconciled bridge", tabs: [] },
   ];
-  const { getBrowserWindows } = createLoader({ "./webkit": { getWebKitWindows: async () => windows } })(
+  const { getBrowserWindows } = createLoader({ "./native": { getNativeBrowserWindows: async () => windows } })(
     "src/browsers/client.ts",
   );
   const result = await getBrowserWindows({ appName: "Test Browser", engine: "webkit" }, [
@@ -294,6 +529,8 @@ test("browser window state follows native window IDs and never guesses a bridge 
   assert.equal(result[2].isMinimized, undefined);
   assert.equal(result[2].space, undefined);
   assert.equal(result[2].isHidden, true);
+  assert.equal(result[3].isMinimized, false);
+  assert.equal(result[3].space, 3);
 });
 
 test("mixed browser windows show only the total count in the root list", () => {
@@ -389,6 +626,7 @@ test("app rows show known Space only when the resolved application has exactly o
 });
 
 test("browser cache keys change with the window snapshot instead of reusing a stale single-window layout", () => {
+  const { createBrowserSnapshot } = createLoader({})("src/browsers/snapshot.ts");
   const requests: { args: MockValue[]; options: { keepPreviousData: boolean } }[] = [];
   const mocks: MockModules = {
     "@raycast/utils": {
@@ -403,7 +641,10 @@ test("browser cache keys change with the window snapshot instead of reusing a st
     [native(1, "Safari")],
     [native(1, "Safari"), native(1, "Safari", { id: 11, isMinimized: true })],
   ]) {
-    renderer({}, mocks, "src/browser-windows.tsx", "BrowserWindowsView", { browser, initialNativeWindows }).render();
+    renderer({}, mocks, "src/browser-windows.tsx", "BrowserWindowsView", {
+      browser,
+      initialSnapshot: createBrowserSnapshot(browser, { nativeWindows: initialNativeWindows }),
+    }).render();
   }
   assert.notEqual(requests[0].args[1], requests[1].args[1]);
   assert.equal(requests[1].options.keepPreviousData, false);

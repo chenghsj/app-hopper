@@ -1,3 +1,4 @@
+import * as nativeCatalog from "../src/native-helper-catalog";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
@@ -63,8 +64,9 @@ test("extensionless Firefox adapter matches Chromium single-window and multi-win
     },
   ];
   const load = createLoader({
+    "../native-helper-catalog": { ...nativeCatalog, nativeHelperSourceHash: () => "v1" },
     "../helpers/browser-helper": {
-      runBrowserHelper: (...args) => load("src/helpers/applescript.ts").runSwiftHelper(...args),
+      runBrowserHelper: (...args) => load("src/helpers/native-helper.ts").runNativeHelper(...args),
     },
     "@raycast/api": {
       environment: { supportPath: "/mock/support", assetsPath: "/mock/assets" },

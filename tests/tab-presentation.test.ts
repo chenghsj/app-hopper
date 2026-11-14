@@ -74,6 +74,7 @@ test("root results distinguish duplicate tabs by Space and preserve raw search a
     assert.equal(row.props.icon.value.fileIcon, chrome.appPath);
     assert.match(row.props.icon.tooltip, /Google Chrome/);
     assert.deepEqual(row.props.accessories, [
+      { text: "Google Chrome", tooltip: "Tab in Google Chrome" },
       { icon: "tack", tooltip: "Pinned" },
       { text: "dmk_prod", tooltip: "dmk_prod" },
       { text: index === 0 ? "Space 2" : "Space 4" },

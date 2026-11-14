@@ -1,4 +1,4 @@
-import { getBrowserByAppName } from "./browsers/registry";
+import { getAppBrowser, getAppWindowEvidence } from "./app-window-evidence";
 import type { BrowserConfig, BrowserWindow, BrowserTab } from "./browsers/types";
 import type { AppGroup, Window, AXWindow } from "./windows";
 import { matchesAnySearchTerm, remainingSearch, searchScore, SEARCH_WEIGHT as W } from "./helpers/search";
@@ -15,10 +15,45 @@ export type BrowserSearchResult = { score: number; window: BrowserWindow } & (
   { kind: "window" } | { kind: "tab"; tab: BrowserTab }
 );
 
-export function getAppBrowser(app: AppGroup): BrowserConfig | undefined {
-  return app.windows
-    .map((window) => getBrowserByAppName(window.app, app.bundlePath || window.bundlePath))
-    .find(Boolean);
+/** Resolve held rows from live identities, even when search filtering hides them. */
+export function resolveSearchResult(
+  result: SearchResult,
+  apps: AppGroup[],
+  browserTabs: Record<string, BrowserWindow[]>,
+  axWindowsByPid: Record<number, AXWindow[] | null>,
+): SearchResult | undefined {
+  const app = apps.find((candidate) => candidate.id === result.app.id);
+  if (!app) return undefined;
+  switch (result.kind) {
+    case "app":
+      return { ...result, app };
+    case "window": {
+      const window = app.windows.find(
+        (candidate) => candidate.pid === result.window.pid && candidate.id === result.window.id,
+      );
+      if (!window) return undefined;
+      const browser = getAppBrowser(app);
+      const browserWindow = browserTabs[browser?.id ?? ""]?.find(
+        (candidate) => (candidate.nativeWindowId ?? candidate.id) === String(window.id),
+      );
+      return { ...result, app, window, browser, browserWindow };
+    }
+    case "ax-window": {
+      if (!app.pids.includes(result.window.pid)) return undefined;
+      const window = axWindowsByPid[result.window.pid]?.find(
+        (candidate) =>
+          candidate.index === result.window.index &&
+          candidate.title === result.window.title &&
+          candidate.subrole === result.window.subrole,
+      );
+      return window ? { ...result, app, window } : undefined;
+    }
+    case "tab": {
+      const window = browserTabs[result.browser.id]?.find((candidate) => candidate.id === result.window.id);
+      const tab = window?.tabs.find((candidate) => candidate.id === result.tab.id);
+      return window && tab ? { ...result, app, window, tab } : undefined;
+    }
+  }
 }
 
 export function tabSearchFields(tab: BrowserTab, appName: string, windowTitle: string) {
@@ -39,6 +74,18 @@ function matchingTabs(window: BrowserWindow, appName: string, query: string) {
   });
 }
 
+function hasSingleAppNamedWindow(app: AppGroup, evidence: ReturnType<typeof getAppWindowEvidence>): boolean {
+  // Count source windows before title-based target deduplication.
+  if (app.windows.length > 1) return false;
+  if (evidence.accessibility.windows.length > 1) return false;
+  // Space evidence also accounts for browser windows and unresolved process observations.
+  if (evidence.windowSpaces.length !== 1) return false;
+  const windowTargets = [...evidence.directWindows, ...evidence.accessibility.searchWindows];
+  if (windowTargets.length !== 1) return false;
+  const normalizeName = (name: string) => name.normalize("NFKC").trim().toLowerCase();
+  return normalizeName(windowTargets[0].title) === normalizeName(app.name);
+}
+
 /** Search apps and concrete content targets together; field weights determine their ranking. */
 export function searchApplications(
   apps: AppGroup[],
@@ -57,14 +104,16 @@ export function searchApplications(
 
   // Content results expose concrete targets; equal scores retain the incoming MRU order.
   const results: SearchResult[] = [...appResults];
+  const appResultIds = new Set(appResults.map((result) => result.app.id));
   for (const app of apps) {
-    const browser = getAppBrowser(app);
-    const cachedWindows = browser ? (browserTabs[browser.id] ?? []) : [];
-    let hasTabMatches = false;
+    const evidence = getAppWindowEvidence(app, { browserTabs, axWindowsByPid, browserCounts: {} });
+    const browser = evidence.browser?.config;
+    const cachedWindows = evidence.browser?.snapshot.windows ?? [];
+    const windowsWithTabMatches = new Set<string>();
     if (browser) {
       for (const window of cachedWindows) {
         for (const { tab, score } of matchingTabs(window, app.name, query)) {
-          hasTabMatches = true;
+          windowsWithTabMatches.add(window.nativeWindowId ?? window.id);
           results.push({
             kind: "tab",
             id: `tab:${browser.id}:${window.id}:${tab.id}`,
@@ -78,10 +127,12 @@ export function searchApplications(
       }
     }
 
-    // Prefer direct tab targets over browser window summaries, including opaque bridge window IDs.
-    const nativeWindows = browser && hasTabMatches ? [] : app.windows;
-    for (const window of nativeWindows) {
-      if (window["has-ax-reference"] === false) continue;
+    // The app row already reaches its only same-named window; tabs remain independent targets.
+    if (appResultIds.has(app.id) && hasSingleAppNamedWindow(app, evidence)) continue;
+
+    // Only replace the same window's summary; other windows may have unavailable tabs.
+    for (const window of evidence.directWindows) {
+      if (windowsWithTabMatches.has(String(window.id))) continue;
       if (!matchesAnySearchTerm(query, [window.title])) continue;
       const score = searchScore(query, [
         { value: window.title, weight: W.title },
@@ -94,20 +145,28 @@ export function searchApplications(
         app,
         window,
         browser,
-        browserWindow: cachedWindows.find((candidate) => candidate.id === String(window.id)),
+        browserWindow: cachedWindows.find(
+          (candidate) => (candidate.nativeWindowId ?? candidate.id) === String(window.id),
+        ),
         score,
       });
     }
-    for (const pid of app.pids) {
-      if (app.windows.some((window) => window.pid === pid && window["has-ax-reference"] !== false)) continue;
-      for (const window of axWindowsByPid[pid] ?? []) {
-        if (!matchesAnySearchTerm(query, [window.title])) continue;
-        const score = searchScore(query, [
-          { value: window.title, weight: W.title },
-          { value: app.name, weight: W.context },
-        ]);
-        if (score !== null) results.push({ kind: "ax-window", id: `ax:${pid}:${window.index}`, app, window, score });
-      }
+    for (const window of evidence.accessibility.searchWindows) {
+      if (!matchesAnySearchTerm(query, [window.title])) continue;
+      const score = searchScore(query, [
+        { value: window.title, weight: W.title },
+        { value: app.name, weight: W.context },
+      ]);
+      if (score !== null)
+        results.push({
+          kind: "ax-window",
+          // AX indices can be reused when a window closes. Keep its expected
+          // title/subrole in the row identity so an update cannot retarget a selection.
+          id: `ax:${window.pid}:${JSON.stringify([window.index, window.title, window.subrole])}`,
+          app,
+          window,
+          score,
+        });
     }
   }
   return results.sort((a, b) => b.score - a.score);

@@ -31,17 +31,19 @@ function environment(
     "@raycast/utils": {},
     "./helpers/applescript": {
       getRaycastPaths: () => ({ supportPath: "/support" }),
-      resolveHelperPaths: (_source, name) => {
-        if (state.damaged) throw new Error("Damaged bundle");
-        return { binaryPath: `/support/${name}`, bundledBinaryPath: state.bundled ? `/assets/${name}` : undefined };
-      },
       execBinary: async (binary, args) => {
         calls.push([binary, args]);
         if (binary === "/usr/bin/sw_vers") return { stdout: state.version };
         if (!state.tools) throw new Error("Developer tools unavailable");
         return { stdout: "/Library/Developer/CommandLineTools" };
       },
-      runSwiftHelper: async () => {
+    },
+    "./helpers/native-helper": {
+      resolveNativeHelper: (name) => {
+        if (state.damaged) throw new Error("Damaged bundle");
+        return { binaryPath: `/support/${name}`, bundledBinaryPath: state.bundled ? `/assets/${name}` : undefined };
+      },
+      runNativeHelper: async () => {
         calls.push(["permission-check"]);
         return state.invalid ? "invalid" : JSON.stringify({ accessibility: state.access });
       },
@@ -118,10 +120,21 @@ test("the setup view shows only the missing prerequisite and provides explicit r
   assert.equal(findAll(tools.render(), (node) => node.props.title === "Open Accessibility Settings").length, 0);
 });
 
-test("window discovery stays disabled until setup is ready and cached rows remain hidden", () => {
+test("window discovery and actions stay disabled until setup is ready", () => {
+  const setupTitles: Record<string, RegExp> = {
+    accessibility: /Allow Accessibility Access/,
+    "developer-tools": /Install Command Line Tools/,
+    error: /Could Not Start/,
+  };
   for (const kind of ["checking", "accessibility", "developer-tools", "error"]) {
     const enabled: boolean[] = [];
-    const snapshot = { windows: [], metadataByPid: {}, browserCounts: {}, browserTabs: {}, axWindowsByPid: {} };
+    const snapshot = {
+      windows: [{ id: 1, pid: 42, app: "Cached App", title: "Cached Window", space: 1, "has-ax-reference": true }],
+      metadataByPid: {},
+      browserCounts: {},
+      browserTabs: {},
+      axWindowsByPid: {},
+    };
     const view = renderer(snapshot, {
       "./runtime-environment": { useRuntimeEnvironment: () => ({ status: { kind }, revalidate() {} }) },
       "./use-window-search": {
@@ -131,7 +144,17 @@ test("window discovery stays disabled until setup is ready and cached rows remai
         },
       },
     });
-    assert.equal(view.render().props.status.kind, kind);
+    const tree = view.render();
+    if (kind === "checking") {
+      assert.equal(tree.type, view.ui.List);
+      assert.equal(tree.props.isLoading, true);
+      const rows = findAll(tree, (node) => node.type === view.ui.List.Item);
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].props.actions, undefined);
+      assert.equal(findAll(tree, (node) => node.type === view.ui.List.EmptyView).length, 0);
+    } else {
+      assert.match(tree.props.markdown, setupTitles[kind]);
+    }
     assert.deepEqual(enabled, [false]);
   }
   let loads = 0;

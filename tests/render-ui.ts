@@ -32,17 +32,31 @@ function renderer(
     ActionPanel: component("ActionPanel"),
     List: component("List"),
     Detail: component("Detail"),
-    Icon: { Minus: "minus", Tack: "tack" },
+    Icon: { Minus: "minus", Tack: "tack", AppWindow: "app-window", MagnifyingGlass: "magnifying-glass" },
     Keyboard: { Shortcut: { Common: { Refresh: {} } } },
     Toast: { Style: { Failure: "failure" } },
+    PopToRootType: { Immediate: "immediate" },
     closeMainWindow: async () => {},
     showToast: async () => {},
   };
+  ui.List.Dropdown = component("List.Dropdown");
+  Object.assign(ui, mocks["@raycast/api"]);
   let cursor = 0;
   const state: MockValue[] = [];
+  let layoutEffects: (() => void)[] = [];
+  const useState = (initial: MockValue) => {
+    const index = cursor++;
+    if (!(index in state)) state[index] = typeof initial === "function" ? initial() : initial;
+    return [
+      state[index],
+      (value: MockValue) => {
+        state[index] = typeof value === "function" ? value(state[index]) : value;
+      },
+    ];
+  };
   const load = createLoader({
-    "@raycast/api": ui,
     "@raycast/utils": {
+      useCachedState: (_key, initial) => useState(initial),
       useCachedPromise: (_load, _args, options) => ({
         data: options?.initialData ?? snapshot.browserWindows ?? [],
         isLoading: false,
@@ -52,16 +66,10 @@ function renderer(
     react: {
       useMemo: (fn) => fn(),
       useEffect: () => {},
-      useState: (initial) => {
-        const index = cursor++;
-        if (!(index in state)) state[index] = typeof initial === "function" ? initial() : initial;
-        return [
-          state[index],
-          (value: MockValue) => {
-            state[index] = typeof value === "function" ? value(state[index]) : value;
-          },
-        ];
-      },
+      useLayoutEffect: (effect) => layoutEffects.push(effect),
+      useCallback: (fn) => fn,
+      useRef: (initial) => useState(() => ({ current: initial }))[0],
+      useState,
     },
     "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     "./use-window-search": {
@@ -72,13 +80,34 @@ function renderer(
       useRuntimeEnvironment: () => ({ status: { kind: "ready" }, revalidate() {} }),
     },
     ...mocks,
+    "@raycast/api": ui,
   });
   const View = load(file)[exportName];
+  const primitives = new Set(Object.values(ui));
+  for (const module of Object.values(mocks)) {
+    for (const value of Object.values(module)) primitives.add(value);
+  }
+  function renderChildren(node: MockValue): MockValue {
+    if (Array.isArray(node)) return node.map(renderChildren);
+    if (!node || typeof node !== "object") return node;
+    if (typeof node.type === "function" && !primitives.has(node.type)) return renderChildren(node.type(node.props));
+    return {
+      ...node,
+      props: {
+        ...node.props,
+        children: renderChildren(node.props?.children),
+        actions: renderChildren(node.props?.actions),
+      },
+    };
+  }
   return {
     ui,
     render: (): TestNode => {
       cursor = 0;
-      return View(props);
+      layoutEffects = [];
+      const tree = renderChildren(View(props));
+      for (const effect of layoutEffects) effect();
+      return tree;
     },
   };
 }

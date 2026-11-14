@@ -4,12 +4,6 @@ import ApplicationServices
 import Carbon
 import Foundation
 
-@_silgen_name("_AXUIElementGetWindow")
-func _AXUIElementGetWindow(_ element: AXUIElement, _ wid: UnsafeMutablePointer<CGWindowID>) -> AXError
-
-@_silgen_name("_AXUIElementCreateWithRemoteToken")
-func _AXUIElementCreateWithRemoteToken(_ data: CFData) -> Unmanaged<AXUIElement>?
-
 struct NativeWindowInput: Decodable {
   let id: Int
   let pid: Int32
@@ -31,132 +25,10 @@ struct BrowserWindowOutput: Encodable {
   let space: Int?
 }
 
-func copyAttr(_ element: AXUIElement, _ attribute: String) -> Any? {
-  var value: CFTypeRef?
-  let error = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
-  return error == .success ? value : nil
-}
-
-func stringAttr(_ element: AXUIElement, _ attribute: String) -> String {
-  if let str = copyAttr(element, attribute) as? String {
-    return str
-  }
-  return ""
-}
-
-func boolFromAny(_ value: Any) -> Bool {
-  if let flag = value as? Bool {
-    return flag
-  }
-  if let num = value as? NSNumber {
-    return num.intValue != 0
-  }
-  return false
-}
-
-func boolAttr(_ element: AXUIElement, _ attribute: String) -> Bool {
-  guard let val = copyAttr(element, attribute) else { return false }
-  return boolFromAny(val)
-}
-
-func windowId(of element: AXUIElement) -> CGWindowID {
-  var wid: CGWindowID = 0
-  if _AXUIElementGetWindow(element, &wid) == .success {
-    return wid
-  }
-  return 0
-}
-
-func findBrowserPIDs(appName: String, nativeWindows: [NativeWindowInput]) -> [Int32] {
-  var seen = Set<Int32>()
-  var result: [Int32] = []
-  for win in nativeWindows where win.pid > 0 {
-    if seen.insert(win.pid).inserted {
-      result.append(win.pid)
-    }
-  }
-  if !result.isEmpty {
-    return result
-  }
-  for app in NSWorkspace.shared.runningApplications {
-    let pid = app.processIdentifier
-    guard pid > 0 else { continue }
-    let localized = app.localizedName ?? ""
-    let bundleName = app.bundleURL?.deletingPathExtension().lastPathComponent ?? ""
-    if localized == appName || bundleName == appName {
-      if seen.insert(pid).inserted {
-        result.append(pid)
-      }
-    }
-  }
-  return result
-}
-
-func discoverAXWindows(
-  pid: Int32,
-  expectedWindowIds: Set<CGWindowID>,
-  maxElementId: UInt64 = 500
-) -> [CGWindowID: AXUIElement] {
-  var found: [CGWindowID: AXUIElement] = [:]
-  let app = AXUIElementCreateApplication(pid)
-  AXUIElementSetMessagingTimeout(app, 0.4)
-  _ = AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
-
-  if let wins = copyAttr(app, kAXWindowsAttribute) as? [AXUIElement] {
-    for win in wins {
-      let wid = windowId(of: win)
-      guard wid > 0, found[wid] == nil else { continue }
-      if stringAttr(win, kAXRoleAttribute) == "AXWindow" {
-        found[wid] = win
-      }
-    }
-  }
-
-  if !expectedWindowIds.isEmpty && expectedWindowIds.isSubset(of: Set(found.keys)) {
-    return found
-  }
-
-  for attr in [kAXMainWindowAttribute, kAXFocusedWindowAttribute] {
-    if let rawWin = copyAttr(app, attr) {
-      let win = rawWin as! AXUIElement
-      let wid = windowId(of: win)
-      guard wid > 0, found[wid] == nil else { continue }
-      if stringAttr(win, kAXRoleAttribute) == "AXWindow" {
-        found[wid] = win
-      }
-    }
-  }
-
-  if !expectedWindowIds.isEmpty && expectedWindowIds.isSubset(of: Set(found.keys)) {
-    return found
-  }
-
-  var remoteToken = Data(count: 20)
-  remoteToken.replaceSubrange(0..<4, with: withUnsafeBytes(of: pid) { Data($0) })
-  remoteToken.replaceSubrange(4..<8, with: withUnsafeBytes(of: Int32(0)) { Data($0) })
-  remoteToken.replaceSubrange(8..<12, with: withUnsafeBytes(of: Int32(0x636f636f)) { Data($0) })
-
-  for elementId: UInt64 in 1...maxElementId {
-    remoteToken.replaceSubrange(12..<20, with: withUnsafeBytes(of: elementId) { Data($0) })
-    guard let element = _AXUIElementCreateWithRemoteToken(remoteToken as CFData)?.takeRetainedValue() else {
-      continue
-    }
-    let wid = windowId(of: element)
-    guard wid > 0, found[wid] == nil else { continue }
-    if !expectedWindowIds.isEmpty && !expectedWindowIds.contains(wid) {
-      continue
-    }
-    AXUIElementSetMessagingTimeout(element, 0.15)
-    guard stringAttr(element, kAXRoleAttribute) == "AXWindow" else {
-      continue
-    }
-    found[wid] = element
-    if !expectedWindowIds.isEmpty && expectedWindowIds.isSubset(of: Set(found.keys)) {
-      break
-    }
-  }
-
-  return found
+func chromiumBrowserPolicy(appName: String) -> (tabClass: String, tabSearchDepth: Int) {
+  // Opera's tab strip sits below extra application groups and uses its own scripting class.
+  if appName == "Opera" { return ("OpTb", 24) }
+  return ("CrTb", 12)
 }
 
 func roleAndSubrole(_ element: AXUIElement) -> (role: String, subrole: String) {
@@ -179,9 +51,10 @@ func collectChromiumTabs(
   _ element: AXUIElement,
   depth: Int = 0,
   insideTabGroup: Bool = false,
+  maxDepth: Int = 12,
   out: inout [AXUIElement]
 ) {
-  if depth > 12 {
+  if depth > maxDepth {
     return
   }
   let (role, subrole) = roleAndSubrole(element)
@@ -204,7 +77,7 @@ func collectChromiumTabs(
   }
   if let children = copyAttr(element, kAXChildrenAttribute) as? [AXUIElement] {
     for child in children {
-      collectChromiumTabs(child, depth: depth + 1, insideTabGroup: nowInTabGroup, out: &out)
+      collectChromiumTabs(child, depth: depth + 1, insideTabGroup: nowInTabGroup, maxDepth: maxDepth, out: &out)
     }
   }
 }
@@ -293,7 +166,7 @@ func propertySpec(prop: FourCharCode, from container: NSAppleEventDescriptor) ->
   return obj.coerce(toDescriptorType: fourCC("obj ")) ?? obj
 }
 
-func queryAppleEventNestedStrings(pid: Int32, prop: FourCharCode) -> [[String]]? {
+func queryAppleEventNestedStrings(pid: Int32, prop: FourCharCode, tabClass: FourCharCode) -> [[String]]? {
   let target = NSAppleEventDescriptor(processIdentifier: pid)
   let event = NSAppleEventDescriptor(
     eventClass: fourCC("core"),
@@ -303,7 +176,7 @@ func queryAppleEventNestedStrings(pid: Int32, prop: FourCharCode) -> [[String]]?
     transactionID: AETransactionID(kAnyTransactionID)
   )
   let allWins = everyElement(want: fourCC("cwin"), from: NSAppleEventDescriptor.null())
-  let allTabs = everyElement(want: fourCC("CrTb"), from: allWins)
+  let allTabs = everyElement(want: tabClass, from: allWins)
   event.setParam(propertySpec(prop: prop, from: allTabs), forKeyword: fourCC("----"))
 
   guard let reply = try? event.sendEvent(options: [.waitForReply, .canInteract], timeout: 2),
@@ -371,8 +244,9 @@ func fetchTabsViaAppleScript(appName: String) -> [(titles: [String], urls: [Stri
 }
 
 func fetchAppleEventTabUrlsByPid(pid: Int32, appName: String = "") -> [(titles: [String], urls: [String])]? {
-  guard let urlsByWin = queryAppleEventNestedStrings(pid: pid, prop: fourCC("URL ")),
-    let titlesByWin = queryAppleEventNestedStrings(pid: pid, prop: fourCC("pnam")),
+  let tabClass = fourCC(chromiumBrowserPolicy(appName: appName).tabClass)
+  guard let urlsByWin = queryAppleEventNestedStrings(pid: pid, prop: fourCC("URL "), tabClass: tabClass),
+    let titlesByWin = queryAppleEventNestedStrings(pid: pid, prop: fourCC("pnam"), tabClass: tabClass),
     urlsByWin.count == titlesByWin.count
   else {
     return fetchTabsViaAppleScript(appName: appName)
@@ -434,6 +308,7 @@ func buildWindowOutput(
   fallbackTitle: String?,
   fallbackDocUrl: String?,
   space: Int?,
+  tabSearchDepth: Int = 12,
   aeCandidates: inout [(titles: [String], urls: [String])]
 ) -> BrowserWindowOutput? {
   let winIdStr = String(wid)
@@ -450,7 +325,7 @@ func buildWindowOutput(
   }
 
   var tabButtons: [AXUIElement] = []
-  collectChromiumTabs(axWindow, out: &tabButtons)
+  collectChromiumTabs(axWindow, maxDepth: tabSearchDepth, out: &tabButtons)
 
   let axWinTitle = stringAttr(axWindow, kAXTitleAttribute)
   let effectiveWinTitle = !axWinTitle.isEmpty ? axWinTitle : (fallbackTitle ?? "")
@@ -518,6 +393,7 @@ func handleList(args: [String]) throws {
   }
 
   let appName = args.count > 0 ? args[0] : "Google Chrome"
+  let policy = chromiumBrowserPolicy(appName: appName)
   let nativeJson = args.count > 1 ? args[1] : "[]"
   let nativeWindows = (try? JSONDecoder().decode([NativeWindowInput].self, from: Data(nativeJson.utf8))) ?? []
 
@@ -532,7 +408,7 @@ func handleList(args: [String]) throws {
 
   for pid in pids {
     let expected = Set(nativeWindows.filter { $0.pid == pid && $0.id > 0 }.map { CGWindowID($0.id) })
-    let discovered = discoverAXWindows(pid: pid, expectedWindowIds: expected)
+    let discovered = discoverAXWindows(pid: pid, expectedWindowIds: expected, enhancedUI: true)
     for (wid, axWin) in discovered {
       axWindowsByWid[wid] = axWin
     }
@@ -555,6 +431,7 @@ func handleList(args: [String]) throws {
       fallbackTitle: nWin.title,
       fallbackDocUrl: nWin.documentUrl,
       space: validSpace,
+      tabSearchDepth: policy.tabSearchDepth,
       aeCandidates: &aeCandidates
     ) {
       results.append(output)
@@ -572,6 +449,7 @@ func handleList(args: [String]) throws {
         fallbackTitle: nil,
         fallbackDocUrl: nil,
         space: nil,
+        tabSearchDepth: policy.tabSearchDepth,
         aeCandidates: &emptyCandidates
       ) {
         results.append(output)
@@ -600,6 +478,7 @@ func handleFocus(args: [String]) throws {
   }
 
   let appName = args[0]
+  let policy = chromiumBrowserPolicy(appName: appName)
   let windowIdStr = args[1]
   let tabIdStr = args[2]
   guard TabReferenceStore.isRetainedID(tabIdStr) || parseTabIndex(tabIdStr) != nil else {
@@ -629,7 +508,7 @@ func handleFocus(args: [String]) throws {
   var ownerPid: Int32 = pids[0]
 
   for pid in pids {
-    let discovered = discoverAXWindows(pid: pid, expectedWindowIds: [targetWid], maxElementId: 2000)
+    let discovered = discoverAXWindows(pid: pid, expectedWindowIds: [targetWid], maxElementId: 2000, enhancedUI: true)
     if let win = discovered[targetWid] {
       foundWindow = win
       ownerPid = pid
@@ -642,7 +521,7 @@ func handleFocus(args: [String]) throws {
   }
 
   var tabButtons: [AXUIElement] = []
-  collectChromiumTabs(targetWindow, out: &tabButtons)
+  collectChromiumTabs(targetWindow, maxDepth: policy.tabSearchDepth, out: &tabButtons)
 
   if !tabButtons.isEmpty {
     guard let resolvedIndex = tabReferences.resolve(

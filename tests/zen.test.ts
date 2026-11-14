@@ -27,7 +27,7 @@ test("Zen uses Gecko AX with native app scope and a separate companion directory
     },
     "../windows": { queryWindows: async () => [native(10), native(20, "Firefox")] },
     "../helpers/browser-helper": {
-      runBrowserHelper: async (_source, _binary, _directory, args: string[]) => {
+      runBrowserHelper: async (_name, _directory, args: string[]) => {
         calls.push(args);
         if (args[0] === "focus") return "ok";
         assert.equal(args[1], "Zen");

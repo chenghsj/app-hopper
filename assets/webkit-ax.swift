@@ -4,12 +4,6 @@ import ApplicationServices
 import Carbon
 import Foundation
 
-@_silgen_name("_AXUIElementGetWindow")
-func _AXUIElementGetWindow(_ element: AXUIElement, _ wid: UnsafeMutablePointer<CGWindowID>) -> AXError
-
-@_silgen_name("_AXUIElementCreateWithRemoteToken")
-func _AXUIElementCreateWithRemoteToken(_ data: CFData) -> Unmanaged<AXUIElement>?
-
 struct NativeWindowInput: Decodable {
   let id: Int
   let pid: Int32
@@ -43,19 +37,6 @@ struct WindowAXInspection {
   var addressBarUrl: String = ""
 }
 
-func copyAttr(_ element: AXUIElement, _ attribute: String) -> Any? {
-  var value: CFTypeRef?
-  let error = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
-  return error == .success ? value : nil
-}
-
-func stringAttr(_ element: AXUIElement, _ attribute: String) -> String {
-  if let str = copyAttr(element, attribute) as? String {
-    return str
-  }
-  return ""
-}
-
 func urlAttr(_ element: AXUIElement, _ attribute: String) -> String {
   guard let val = copyAttr(element, attribute) else { return "" }
   if let url = val as? URL {
@@ -65,120 +46,6 @@ func urlAttr(_ element: AXUIElement, _ attribute: String) -> String {
     return str
   }
   return ""
-}
-
-func boolFromAny(_ value: Any) -> Bool {
-  if let flag = value as? Bool {
-    return flag
-  }
-  if let num = value as? NSNumber {
-    return num.intValue != 0
-  }
-  return false
-}
-
-func boolAttr(_ element: AXUIElement, _ attribute: String) -> Bool {
-  guard let val = copyAttr(element, attribute) else { return false }
-  return boolFromAny(val)
-}
-
-func windowId(of element: AXUIElement) -> CGWindowID {
-  var wid: CGWindowID = 0
-  if _AXUIElementGetWindow(element, &wid) == .success {
-    return wid
-  }
-  return 0
-}
-
-func findBrowserPIDs(appName: String, nativeWindows: [NativeWindowInput]) -> [Int32] {
-  var seen = Set<Int32>()
-  var result: [Int32] = []
-  for win in nativeWindows where win.pid > 0 {
-    if seen.insert(win.pid).inserted {
-      result.append(win.pid)
-    }
-  }
-  if !result.isEmpty {
-    return result
-  }
-  for app in NSWorkspace.shared.runningApplications {
-    let pid = app.processIdentifier
-    guard pid > 0 else { continue }
-    let localized = app.localizedName ?? ""
-    let bundleName = app.bundleURL?.deletingPathExtension().lastPathComponent ?? ""
-    if localized == appName || bundleName == appName {
-      if seen.insert(pid).inserted {
-        result.append(pid)
-      }
-    }
-  }
-  return result
-}
-
-func discoverAXWindows(
-  pid: Int32,
-  expectedWindowIds: Set<CGWindowID>,
-  maxElementId: UInt64 = 500
-) -> [CGWindowID: AXUIElement] {
-  var found: [CGWindowID: AXUIElement] = [:]
-  let app = AXUIElementCreateApplication(pid)
-  AXUIElementSetMessagingTimeout(app, 0.4)
-
-  if let wins = copyAttr(app, kAXWindowsAttribute) as? [AXUIElement] {
-    for win in wins {
-      let wid = windowId(of: win)
-      guard wid > 0, found[wid] == nil else { continue }
-      if stringAttr(win, kAXRoleAttribute) == "AXWindow" {
-        found[wid] = win
-      }
-    }
-  }
-
-  if !expectedWindowIds.isEmpty && expectedWindowIds.isSubset(of: Set(found.keys)) {
-    return found
-  }
-
-  for attr in [kAXMainWindowAttribute, kAXFocusedWindowAttribute] {
-    if let rawWin = copyAttr(app, attr) {
-      let win = rawWin as! AXUIElement
-      let wid = windowId(of: win)
-      guard wid > 0, found[wid] == nil else { continue }
-      if stringAttr(win, kAXRoleAttribute) == "AXWindow" {
-        found[wid] = win
-      }
-    }
-  }
-
-  if !expectedWindowIds.isEmpty && expectedWindowIds.isSubset(of: Set(found.keys)) {
-    return found
-  }
-
-  var remoteToken = Data(count: 20)
-  remoteToken.replaceSubrange(0..<4, with: withUnsafeBytes(of: pid) { Data($0) })
-  remoteToken.replaceSubrange(4..<8, with: withUnsafeBytes(of: Int32(0)) { Data($0) })
-  remoteToken.replaceSubrange(8..<12, with: withUnsafeBytes(of: Int32(0x636f636f)) { Data($0) })
-
-  for elementId: UInt64 in 1...maxElementId {
-    remoteToken.replaceSubrange(12..<20, with: withUnsafeBytes(of: elementId) { Data($0) })
-    guard let element = _AXUIElementCreateWithRemoteToken(remoteToken as CFData)?.takeRetainedValue() else {
-      continue
-    }
-    let wid = windowId(of: element)
-    guard wid > 0, found[wid] == nil else { continue }
-    if !expectedWindowIds.isEmpty && !expectedWindowIds.contains(wid) {
-      continue
-    }
-    AXUIElementSetMessagingTimeout(element, 0.15)
-    guard stringAttr(element, kAXRoleAttribute) == "AXWindow" else {
-      continue
-    }
-    found[wid] = element
-    if !expectedWindowIds.isEmpty && expectedWindowIds.isSubset(of: Set(found.keys)) {
-      break
-    }
-  }
-
-  return found
 }
 
 func roleAndSubrole(_ element: AXUIElement) -> (role: String, subrole: String) {
@@ -592,6 +459,79 @@ func matchAECandidate(
 
 private let tabReferences = TabReferenceStore()
 
+func preferredWindowURL(documentURL: String, inspection: WindowAXInspection, fallbackURL: String?) -> String {
+  let sources = [documentURL, inspection.webAreaUrl, fallbackURL ?? "", inspection.addressBarUrl]
+  return sources.first(where: { !$0.isEmpty }) ?? ""
+}
+
+func appleEventTabs(
+  _ candidate: AEWindowCandidate,
+  windowId: String,
+  fallbackTitle: String = "",
+  activeURL: String = ""
+) -> [BrowserTabOutput] {
+  candidate.titles.enumerated().map { (index, title) in
+    let url = index < candidate.urls.count ? candidate.urls[index] : ""
+    let fallbackURL = index == 0 ? activeURL : ""
+    return BrowserTabOutput(
+      id: "\(windowId):\(index)",
+      title: title.isEmpty ? fallbackTitle : title,
+      url: url.isEmpty ? fallbackURL : url
+    )
+  }
+}
+
+func buildWindowWithoutAX(
+  wid: CGWindowID,
+  fallbackTitle: String?,
+  fallbackDocUrl: String?,
+  space: Int?,
+  onlyWindowForPid: Bool,
+  aeCandidates: inout [AEWindowCandidate]
+) -> BrowserWindowOutput? {
+  let winId = String(wid)
+  if let matched = matchAECandidate(
+    wid: wid, tabCount: 0,
+    effectiveDocUrl: fallbackDocUrl ?? "", effectiveWinTitle: fallbackTitle ?? "",
+    onlyWindowForPid: onlyWindowForPid, aeCandidates: &aeCandidates
+  ), !matched.titles.isEmpty {
+    let tabs = appleEventTabs(matched, windowId: winId)
+    return BrowserWindowOutput(id: winId, title: fallbackTitle ?? tabs.first?.title ?? "", tabs: tabs, space: space)
+  }
+  guard let title = fallbackTitle, !title.isEmpty else { return nil }
+  let tab = BrowserTabOutput(id: "\(winId):0", title: title, url: fallbackDocUrl ?? "")
+  return BrowserWindowOutput(id: winId, title: title, tabs: [tab], space: space)
+}
+
+func buildWindowWithoutTabControls(
+  wid: CGWindowID,
+  axWindow: AXUIElement,
+  title: String,
+  activeURL: String,
+  hasFallbackTitle: Bool,
+  space: Int?,
+  onlyWindowForPid: Bool,
+  aeCandidates: inout [AEWindowCandidate]
+) -> BrowserWindowOutput? {
+  let subrole = stringAttr(axWindow, kAXSubroleAttribute)
+  // Dialogs must match an actual browser window; preferences panels are excluded.
+  let isDialog = ["AXDialog", "AXSystemDialog"].contains(subrole)
+  if isDialog && !aeCandidates.contains(where: { $0.windowId == Int(wid) }) { return nil }
+  if subrole != "AXStandardWindow" && !hasFallbackTitle { return nil }
+
+  let winId = String(wid)
+  if let matched = matchAECandidate(
+    wid: wid, tabCount: 1, effectiveDocUrl: activeURL, effectiveWinTitle: title,
+    onlyWindowForPid: onlyWindowForPid, aeCandidates: &aeCandidates
+  ), !matched.titles.isEmpty {
+    let tabs = appleEventTabs(matched, windowId: winId, fallbackTitle: title, activeURL: activeURL)
+    let finalTitle = title.isEmpty ? (tabs.first?.title ?? "") : title
+    return BrowserWindowOutput(id: winId, title: finalTitle, tabs: tabs, space: space)
+  }
+  let tab = BrowserTabOutput(id: "\(winId):0", title: title, url: activeURL)
+  return BrowserWindowOutput(id: winId, title: title, tabs: [tab], space: space)
+}
+
 func buildWindowOutput(
   wid: CGWindowID,
   axWindow: AXUIElement?,
@@ -601,123 +541,48 @@ func buildWindowOutput(
   onlyWindowForPid: Bool = false,
   aeCandidates: inout [AEWindowCandidate]
 ) -> BrowserWindowOutput? {
-  let winIdStr = String(wid)
   guard let axWindow = axWindow else {
-    if let matchedAE = matchAECandidate(
-      wid: wid,
-      tabCount: 0,
-      effectiveDocUrl: fallbackDocUrl ?? "",
-      effectiveWinTitle: fallbackTitle ?? "",
-      onlyWindowForPid: onlyWindowForPid,
-      aeCandidates: &aeCandidates
-    ), !matchedAE.titles.isEmpty {
-      let tabs = matchedAE.titles.enumerated().map { (idx, title) in
-        let url = idx < matchedAE.urls.count ? matchedAE.urls[idx] : ""
-        return BrowserTabOutput(id: "\(winIdStr):\(idx)", title: title, url: url)
-      }
-      let title = fallbackTitle ?? tabs.first?.title ?? ""
-      return BrowserWindowOutput(id: winIdStr, title: title, tabs: tabs, space: space)
-    }
-    guard let fallbackTitle = fallbackTitle, !fallbackTitle.isEmpty else {
-      return nil
-    }
-    return BrowserWindowOutput(
-      id: winIdStr,
-      title: fallbackTitle,
-      tabs: [BrowserTabOutput(id: "\(winIdStr):0", title: fallbackTitle, url: fallbackDocUrl ?? "")],
-      space: space
+    return buildWindowWithoutAX(
+      wid: wid, fallbackTitle: fallbackTitle, fallbackDocUrl: fallbackDocUrl, space: space,
+      onlyWindowForPid: onlyWindowForPid, aeCandidates: &aeCandidates
     )
   }
-
   let inspection = inspectWebKitWindow(axWindow, collectUrl: true)
-  let tabButtons = inspection.tabButtons
-
-  let axWinTitle = stringAttr(axWindow, kAXTitleAttribute)
-  let effectiveWinTitle = !axWinTitle.isEmpty ? axWinTitle : (fallbackTitle ?? "")
-  let axDocUrl = urlAttr(axWindow, kAXDocumentAttribute)
-  let fallbackActiveUrl =
-    !axDocUrl.isEmpty
-    ? axDocUrl
-    : (!inspection.webAreaUrl.isEmpty
-      ? inspection.webAreaUrl
-      : (!(fallbackDocUrl ?? "").isEmpty ? (fallbackDocUrl ?? "") : inspection.addressBarUrl))
-
-  if tabButtons.isEmpty {
-    let subrole = stringAttr(axWindow, kAXSubroleAttribute)
-    // A dialog without tab controls must match an actual browser window, not a preferences panel.
-    if ["AXDialog", "AXSystemDialog"].contains(subrole)
-      && !aeCandidates.contains(where: { $0.windowId == Int(wid) })
-    {
-      return nil
-    }
-    if subrole != "AXStandardWindow" && fallbackTitle == nil {
-      return nil
-    }
-    if let matchedAE = matchAECandidate(
-      wid: wid,
-      tabCount: 1,
-      effectiveDocUrl: fallbackActiveUrl,
-      effectiveWinTitle: effectiveWinTitle,
-      onlyWindowForPid: onlyWindowForPid,
-      aeCandidates: &aeCandidates
-    ), !matchedAE.titles.isEmpty {
-      let tabs = matchedAE.titles.enumerated().map { (idx, title) in
-        let url = idx < matchedAE.urls.count ? matchedAE.urls[idx] : ""
-        return BrowserTabOutput(
-          id: "\(winIdStr):\(idx)",
-          title: !title.isEmpty ? title : effectiveWinTitle,
-          url: !url.isEmpty ? url : (idx == 0 ? fallbackActiveUrl : "")
-        )
-      }
-      let finalTitle = !effectiveWinTitle.isEmpty ? effectiveWinTitle : (tabs.first?.title ?? "")
-      return BrowserWindowOutput(id: winIdStr, title: finalTitle, tabs: tabs, space: space)
-    }
-    return BrowserWindowOutput(
-      id: winIdStr,
-      title: effectiveWinTitle,
-      tabs: [BrowserTabOutput(id: "\(winIdStr):0", title: effectiveWinTitle, url: fallbackActiveUrl)],
-      space: space
+  let axTitle = stringAttr(axWindow, kAXTitleAttribute)
+  let windowTitle = axTitle.isEmpty ? (fallbackTitle ?? "") : axTitle
+  let activeURL = preferredWindowURL(
+    documentURL: urlAttr(axWindow, kAXDocumentAttribute), inspection: inspection, fallbackURL: fallbackDocUrl
+  )
+  if inspection.tabButtons.isEmpty {
+    return buildWindowWithoutTabControls(
+      wid: wid, axWindow: axWindow, title: windowTitle, activeURL: activeURL,
+      hasFallbackTitle: fallbackTitle != nil, space: space,
+      onlyWindowForPid: onlyWindowForPid, aeCandidates: &aeCandidates
     )
   }
 
-  let tabInfos = tabButtons.map { readTabInfo($0) }
+  let tabInfos = inspection.tabButtons.map { readTabInfo($0) }
   let matchedAE = matchAECandidate(
-    wid: wid,
-    tabCount: tabInfos.count,
-    effectiveDocUrl: fallbackActiveUrl,
-    effectiveWinTitle: effectiveWinTitle,
-    onlyWindowForPid: onlyWindowForPid,
-    aeCandidates: &aeCandidates
+    wid: wid, tabCount: tabInfos.count, effectiveDocUrl: activeURL, effectiveWinTitle: windowTitle,
+    onlyWindowForPid: onlyWindowForPid, aeCandidates: &aeCandidates
   )
   let axTitles = tabInfos.map { $0.title }
-
   var tabs: [BrowserTabOutput] = []
   var activeTitle = ""
-
   for (index, info) in tabInfos.enumerated() {
-    if info.selected && !info.title.isEmpty {
-      activeTitle = info.title
-    }
-    let aeUrl = matchedAE.map {
+    if info.selected && !info.title.isEmpty { activeTitle = info.title }
+    let aeURL = matchedAE.map {
       matchedTabURL(title: info.title, axTitles: axTitles, aeTitles: $0.titles, aeURLs: $0.urls)
     } ?? ""
-    let axUrl = !info.customUrl.isEmpty ? info.customUrl : (info.selected ? fallbackActiveUrl : "")
-    let url = !axUrl.isEmpty ? axUrl : aeUrl
-    tabs.append(
-      BrowserTabOutput(
-        id: tabReferences.register(windowId: wid, element: tabButtons[index], fallbackIndex: index),
-        title: info.title,
-        url: url
-      )
-    )
+    let selectedURL = info.selected ? activeURL : ""
+    let axURL = info.customUrl.isEmpty ? selectedURL : info.customUrl
+    tabs.append(BrowserTabOutput(
+      id: tabReferences.register(windowId: wid, element: inspection.tabButtons[index], fallbackIndex: index),
+      title: info.title, url: axURL.isEmpty ? aeURL : axURL
+    ))
   }
-
-  let finalTitle = !activeTitle.isEmpty ? activeTitle : effectiveWinTitle
   return BrowserWindowOutput(
-    id: winIdStr,
-    title: finalTitle,
-    tabs: tabs,
-    space: space
+    id: String(wid), title: activeTitle.isEmpty ? windowTitle : activeTitle, tabs: tabs, space: space
   )
 }
 

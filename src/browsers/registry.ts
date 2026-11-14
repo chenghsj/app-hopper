@@ -21,6 +21,7 @@ export const browsers: BrowserConfig[] = [
     appName: "Vivaldi",
     engine: "chromium",
   },
+  { id: "opera", appName: "Opera", engine: "chromium" },
   { id: "firefox", appName: "Firefox", engine: "firefox" },
   { id: "zen", appName: "Zen", engine: "firefox" },
   { id: "safari", appName: "Safari", engine: "webkit" },

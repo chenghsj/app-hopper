@@ -14,19 +14,19 @@
       "sha256": "bb66b5c2fd37a8c3430a9fa276999a84958f87d0b80805388b76e29b27b4cc02"
     },
     "chromium-ax": {
-      "file": "chromium-ax-042d2e8efc3c",
-      "sourceHash": "042d2e8efc3c",
-      "sha256": "c0279fa809fe3bbaccc83ca40a330c9b5fc377928e869295ec36e3925602134f"
+      "file": "chromium-ax-caa86deafc21",
+      "sourceHash": "caa86deafc21",
+      "sha256": "64450b1b676cffe77f149c411a57507c35836b4ca6bdb1af262cffc85c793640"
     },
     "webkit-ax": {
-      "file": "webkit-ax-fa1d31e04c13",
-      "sourceHash": "fa1d31e04c13",
-      "sha256": "2d7d2ea22bfee28ddb1c543e77fa0cd3d1b10feea024fa357e7331fb3d2549d2"
+      "file": "webkit-ax-9d3b7892c574",
+      "sourceHash": "9d3b7892c574",
+      "sha256": "38d16b5f423cf39fa2f6cd0eb510801771faa8acf0a1246d754e41ccddc48109"
     },
     "firefox-ax": {
-      "file": "firefox-ax-5aab5f2906a7",
-      "sourceHash": "5aab5f2906a7",
-      "sha256": "109950d51e1a6d65211fa2a33dfd354dc589327ab136f112c2701767f60ca964"
+      "file": "firefox-ax-be66c84b3ba9",
+      "sourceHash": "be66c84b3ba9",
+      "sha256": "3fb5a895811c6d59f5c8585cdf5721a1d00439fab2eed4ddb65bb084132a95cb"
     },
     "firefox-bridge": {
       "file": "firefox-bridge-7505e0e44b8c",

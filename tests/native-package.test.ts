@@ -13,15 +13,17 @@ test("bundled helpers skip compilation, recover executable mode, reject corrupti
   const source = "reviewable Swift source";
   const hash = createHash("sha256").update(source).digest("hex").slice(0, 12);
   const binary = "test bundled executable";
-  const file = `entry-${hash}`;
+  const file = `runtime-status-${hash}`;
   await fsp.mkdir(path.join(directory, "native"));
-  await fsp.writeFile(path.join(directory, "entry.swift"), source);
+  await fsp.writeFile(path.join(directory, "runtime-status.swift"), source);
   await fsp.writeFile(path.join(directory, "native", file), binary, { mode: 0o600 });
   await fsp.writeFile(
     path.join(directory, "native/manifest.json"),
     JSON.stringify({
       version: 1,
-      helpers: { entry: { file, sourceHash: hash, sha256: createHash("sha256").update(binary).digest("hex") } },
+      helpers: {
+        "runtime-status": { file, sourceHash: hash, sha256: createHash("sha256").update(binary).digest("hex") },
+      },
     }),
   );
   let compiles = 0;
@@ -35,17 +37,17 @@ test("bundled helpers skip compilation, recover executable mode, reject corrupti
           callback(null, "", "");
         },
       },
-    })("src/helpers/applescript.ts");
+    })("src/helpers/native-helper.ts");
   }
-  const bundled = await helpers().ensureSwiftHelper("entry.swift", "entry", "/unused");
+  const bundled = await helpers().ensureNativeHelper("runtime-status", "/unused");
   assert.equal(bundled, path.join(directory, "native", file));
   assert.equal(compiles, 0);
   assert.notEqual((await fsp.stat(bundled)).mode & 0o111, 0);
   await fsp.writeFile(bundled, "tampered executable");
-  await assert.rejects(helpers().ensureSwiftHelper("entry.swift", "entry", "/unused"), /damaged/);
+  await assert.rejects(helpers().ensureNativeHelper("runtime-status", "/unused"), /damaged/);
   assert.equal(compiles, 0, "corruption must not silently fall back to compilation");
-  await fsp.writeFile(path.join(directory, "entry.swift"), source + " changed");
-  const updated = await helpers().ensureSwiftHelper("entry.swift", "entry", "/unused");
+  await fsp.writeFile(path.join(directory, "runtime-status.swift"), source + " changed");
+  const updated = await helpers().ensureNativeHelper("runtime-status", "/unused");
   assert.equal(path.dirname(updated), path.join(directory, "support"));
   assert.equal(compiles, 1);
 });
@@ -57,9 +59,11 @@ test("Firefox installs a bundled native host without requiring a compiler", asyn
   await fsp.writeFile(bundled, "bundled host bytes");
   const integration = createLoader({
     "node:os": { homedir: () => home },
+    "../helpers/native-helper": {
+      resolveNativeHelper: () => ({ sourceHash: "0123456789ab", sourcePaths: [], bundledBinaryPath: bundled }),
+    },
     "../helpers/applescript": {
       getRaycastPaths: () => ({ assetsPath: path.resolve("assets") }),
-      findBundledHelper: () => bundled,
       execBinary: async () => assert.fail("Bundled installation must not invoke a compiler"),
     },
   })("src/browsers/firefox-integration.ts");

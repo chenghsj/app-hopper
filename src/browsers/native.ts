@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import path from "node:path";
-import type { BrowserConfig, BrowserWindow } from "./types";
+import type { BrowserConfig, BrowserWindow, BrowserSummary } from "./types";
 import { runBrowserHelper } from "../helpers/browser-helper";
 import { assertNativeTabTarget } from "../helpers/browser-tab-id";
 import { sortWindows } from "../helpers/window-utils";
@@ -8,17 +8,22 @@ import { queryWindows, Window } from "../windows";
 
 const DIRECTORY = path.join(homedir(), "Library/Application Support/raycast-app-hopper");
 
-export interface BrowserSummary {
-  windows: number;
-  tabs?: number;
+const engines = {
+  chromium: { helper: "chromium-ax", label: "Chromium", subroles: ["AXStandardWindow"] },
+  webkit: { helper: "webkit-ax", label: "WebKit", subroles: ["AXStandardWindow", "AXDialog", "AXSystemDialog"] },
+};
+
+function nativeEngine(browser: BrowserConfig) {
+  if (browser.engine === "firefox") throw new Error("Firefox uses its own bridge and AX fallback");
+  return engines[browser.engine];
 }
 
-function parseAXWindows(raw: string): BrowserWindow[] {
+function parseAXWindows(raw: string, label: string): BrowserWindow[] {
   const value: unknown = JSON.parse(raw);
-  if (!Array.isArray(value)) throw new Error("Invalid Chromium window list");
+  if (!Array.isArray(value)) throw new Error(`Invalid ${label} window list`);
   return value.map((window) => {
     if (!window || typeof window !== "object" || typeof window.id !== "string" || !Array.isArray(window.tabs)) {
-      throw new Error("Invalid Chromium window");
+      throw new Error(`Invalid ${label} window`);
     }
     const space =
       typeof window.space === "number" && Number.isSafeInteger(window.space) && window.space > 0
@@ -30,7 +35,7 @@ function parseAXWindows(raw: string): BrowserWindow[] {
       space,
       tabs: window.tabs.map((tab: { id: string; title: string; url: string }) => {
         if (!tab || typeof tab.id !== "string" || typeof tab.title !== "string" || typeof tab.url !== "string") {
-          throw new Error("Invalid Chromium tab");
+          throw new Error(`Invalid ${label} tab`);
         }
         return { id: tab.id, title: tab.title, url: tab.url };
       }),
@@ -38,38 +43,39 @@ function parseAXWindows(raw: string): BrowserWindow[] {
   });
 }
 
-function filterChromiumNativeWindows(windows: Window[], appName: string): Window[] {
+function filterNativeWindows(windows: Window[], browser: BrowserConfig): Window[] {
   const matching = windows.filter(
     (win) =>
       win &&
-      win.app === appName &&
+      win.app === browser.appName &&
       Number.isSafeInteger(win.id) &&
       win.id > 0 &&
-      (!win.subrole || win.subrole === "AXStandardWindow"),
+      (!win.subrole || nativeEngine(browser).subroles.includes(win.subrole)),
   );
   return sortWindows(matching);
 }
 
-async function getChromiumNativeWindows(appName: string): Promise<Window[]> {
+async function queryNativeWindows(browser: BrowserConfig): Promise<Window[]> {
   try {
     const allWindows = await queryWindows();
-    return filterChromiumNativeWindows(allWindows, appName);
+    return filterNativeWindows(allWindows, browser);
   } catch {
     return [];
   }
 }
 
 /**
- * Retrieves all windows and tabs from a Chromium-based browser via the native Swift helper.
+ * Retrieves native browser windows and tabs while retaining each engine's window policy.
  */
-export async function getChromiumWindows(
+export async function getNativeBrowserWindows(
   browser: BrowserConfig,
   preloadedNativeWindows?: Window[],
 ): Promise<BrowserWindow[]> {
   const appName = browser.appName;
+  const engine = nativeEngine(browser);
   const nativeWindows = preloadedNativeWindows
-    ? filterChromiumNativeWindows(preloadedNativeWindows, appName)
-    : await getChromiumNativeWindows(appName);
+    ? filterNativeWindows(preloadedNativeWindows, browser)
+    : await queryNativeWindows(browser);
   const payload = JSON.stringify(
     nativeWindows.map((win) => ({
       id: win.id,
@@ -79,34 +85,35 @@ export async function getChromiumWindows(
       documentUrl: win.documentUrl,
     })),
   );
-  const stdout = await runBrowserHelper("chromium-ax.swift", "chromium-ax", DIRECTORY, ["list", appName, payload]);
-  return parseAXWindows(stdout);
+  const stdout = await runBrowserHelper(engine.helper, DIRECTORY, ["list", appName, payload]);
+  return parseAXWindows(stdout, engine.label);
 }
 
 /**
- * Activates a specific tab in a Chromium browser window via the native Swift helper.
+ * Activates a specific tab through the engine's existing native helper.
  */
-export async function focusChromiumTab(
+export async function focusNativeBrowserTab(
   browser: BrowserConfig,
   windowId: string,
   tabId: string,
   expectedTitle = "",
 ): Promise<void> {
-  assertNativeTabTarget(windowId, tabId, "Chromium");
+  assertNativeTabTarget(windowId, tabId, nativeEngine(browser).label);
 
   const appName = browser.appName;
-  const nativeWindows = await getChromiumNativeWindows(appName);
+  const engine = nativeEngine(browser);
+  const nativeWindows = await queryNativeWindows(browser);
   const matched = nativeWindows.find((win) => String(win.id) === windowId);
   const args = ["focus", appName, windowId, tabId, expectedTitle];
   if (matched && Number.isSafeInteger(matched.pid) && matched.pid > 0) {
     args.push(String(matched.pid));
   }
 
-  await runBrowserHelper("chromium-ax.swift", "chromium-ax", DIRECTORY, args);
+  await runBrowserHelper(engine.helper, DIRECTORY, args);
 }
 
 /** Count windows and (for a single window) tabs via the native Swift helper. */
-export async function getChromiumSummary(
+export async function getNativeBrowserSummary(
   browser: BrowserConfig,
   preloadedNativeWindows?: Window[],
 ): Promise<BrowserSummary> {
@@ -120,7 +127,7 @@ export async function getChromiumSummary(
     return { windows: preloadedNativeWindows.length };
   }
 
-  const windows = await getChromiumWindows(browser, preloadedNativeWindows);
+  const windows = await getNativeBrowserWindows(browser, preloadedNativeWindows);
   return {
     windows: windows.length,
     tabs: windows.length === 1 ? windows[0].tabs.length : undefined,

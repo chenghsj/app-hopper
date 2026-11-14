@@ -1,4 +1,3 @@
-struct WindowAXContent { let tabButtons: [AXUIElement]; let urlBarValue: String }
 func inspectBrowserWindow(_ window: AXUIElement) -> WindowAXContent {
   WindowAXContent(tabButtons: currentTabs, urlBarValue: "https://example.com/same")
 }

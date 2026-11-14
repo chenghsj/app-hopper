@@ -19,7 +19,7 @@ test("Chromium uses known AX URLs to distinguish windows, consumes matches, and 
   runSwiftHarness(
     `
     import Foundation
-    ${source.slice(source.indexOf("struct NativeWindowInput"), source.indexOf("func copyAttr"))}
+    ${source.slice(source.indexOf("struct NativeWindowInput"), source.indexOf("\nfunc ", source.indexOf("struct NativeWindowInput")))}
     ${swiftFunction(source, "matchUrlsByTitle")}
     ${swiftFunction(source, "buildWindowOutput")}
 

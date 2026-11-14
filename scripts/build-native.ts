@@ -38,7 +38,7 @@ const manifest: NativeManifest = {
 const built: string[] = [];
 try {
   for (const helper of config.helpers) {
-    const hash = sourceHash(helper);
+    const hash = sourceHash(helper, assets);
     const cached = previous?.helpers?.[helper.name];
     if (!release && cached && previous?.minimumMacOS === config.minimumMacOS) {
       try {

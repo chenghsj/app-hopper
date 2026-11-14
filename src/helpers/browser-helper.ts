@@ -1,8 +1,8 @@
 import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
-import { ensureSwiftHelper, OSA_TIMEOUT_MS } from "./applescript";
+import { OSA_TIMEOUT_MS } from "./applescript";
+import { ensureNativeHelper } from "./native-helper";
 import { isRetainedTabId } from "./browser-tab-id";
 
-const SHARED_BROWSER_SOURCES = ["browser-tab-references.swift", "browser-helper-runtime.swift"];
 const MAX_RESPONSE_LENGTH = 10 * 1024 * 1024;
 const SESSION_ENDED_MESSAGE = "Browser session ended. Refresh the list.";
 const sessions = new Map<string, BrowserHelperSession>();
@@ -13,7 +13,7 @@ interface PendingRequest {
   timer: NodeJS.Timeout;
 }
 
-/** One process per engine; stdin closes when the Raycast host exits. */
+/** One process per browser; slow apps cannot block other browsers using the same engine. */
 class BrowserHelperSession {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly onHostExit = () => this.child.kill();
@@ -22,7 +22,10 @@ class BrowserHelperSession {
   private stopped = false;
   private pending?: PendingRequest;
 
-  constructor(private readonly binary: string) {
+  constructor(
+    binary: string,
+    private readonly key: string,
+  ) {
     this.child = spawn(binary, ["serve"], { stdio: "pipe" });
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => this.receiveOutput(chunk));
@@ -84,7 +87,7 @@ class BrowserHelperSession {
   private stop(error: Error): void {
     if (this.stopped) return;
     this.stopped = true;
-    if (sessions.get(this.binary) === this) sessions.delete(this.binary);
+    if (sessions.get(this.key) === this) sessions.delete(this.key);
     process.removeListener("exit", this.onHostExit);
     this.child.kill();
     if (this.pending) {
@@ -95,20 +98,16 @@ class BrowserHelperSession {
   }
 }
 
-export async function runBrowserHelper(
-  sourceFileName: string,
-  binaryPrefix: string,
-  fallbackSupportDir: string,
-  args: string[],
-): Promise<string> {
-  const binary = await ensureSwiftHelper(sourceFileName, binaryPrefix, fallbackSupportDir, SHARED_BROWSER_SOURCES);
-  let session = sessions.get(binary);
+export async function runBrowserHelper(name: string, fallbackSupportDir: string, args: string[]): Promise<string> {
+  const binary = await ensureNativeHelper(name, fallbackSupportDir);
+  const key = JSON.stringify([binary, args[1] ?? ""]);
+  let session = sessions.get(key);
   if (!session) {
     if (args[0] === "focus" && isRetainedTabId(args[3] ?? "")) {
       throw new Error("Tab list expired. Refresh the list.");
     }
-    session = new BrowserHelperSession(binary);
-    sessions.set(binary, session);
+    session = new BrowserHelperSession(binary, key);
+    sessions.set(key, session);
   }
   return session.request(args);
 }

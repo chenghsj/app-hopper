@@ -1,7 +1,7 @@
 import { getBrowserByAppName } from "./browsers/registry";
-import type { BrowserSummary } from "./browsers/chromium";
-import type { BrowserWindow } from "./browsers/types";
+import type { AppWindowData } from "./app-window-evidence";
 import { getBrowserSummary, getBrowserWindows } from "./browsers/client";
+import { createBrowserSnapshot, retainBrowserSnapshot, summarizeBrowserWindows } from "./browsers/snapshot";
 import { getApplicationOrder } from "./helpers/app-order";
 import {
   AXWindow,
@@ -13,15 +13,11 @@ import {
   queryWindows,
 } from "./windows";
 
-export interface WindowSearchData {
+export interface WindowSearchData extends AppWindowData {
   windows: Window[];
   applicationOrder: number[];
   applications: RunningAppMetadata[];
   metadataByPid: Record<number, RunningAppMetadata>;
-  browserCounts: Record<string, BrowserSummary>;
-  /** Cached browser windows and tabs, keyed by browser id, used by the root search. */
-  browserTabs: Record<string, BrowserWindow[]>;
-  axWindowsByPid: Record<number, AXWindow[] | null>;
 }
 
 export function emptyWindowData(): WindowSearchData {
@@ -56,10 +52,54 @@ const systemQueries: WindowDataQueries = {
   getRunningApplications,
 };
 
+function sameNativeWindows(before: Window[], after: Window[]): boolean {
+  return (
+    before.length === after.length &&
+    after.every((window) => before.some((candidate) => candidate.id === window.id && candidate.pid === window.pid))
+  );
+}
+
+/** Retain enrichment only while its native window/process identities still exist. */
+function retainWindowData(previous: WindowSearchData, windows: Window[]): WindowSearchData {
+  const browserTabs: WindowSearchData["browserTabs"] = {};
+  const browserCounts: WindowSearchData["browserCounts"] = {};
+  const browsers = new Map(
+    windows.flatMap((window) => {
+      const browser = getBrowserByAppName(window.app);
+      return browser ? [[browser.id, browser] as const] : [];
+    }),
+  );
+  for (const [id, browser] of browsers) {
+    const retained = retainBrowserSnapshot(
+      createBrowserSnapshot(browser, {
+        nativeWindows: previous.windows,
+        windows: previous.browserTabs[id],
+        summary: previous.browserCounts[id],
+      }),
+      windows,
+    );
+    if (retained.windows !== undefined) browserTabs[id] = retained.windows;
+    if (retained.summary !== undefined) browserCounts[id] = retained.summary;
+  }
+  const pids = new Set([...windows.map((window) => window.pid), ...previous.applications.map((app) => app.pid)]);
+  const axWindowsByPid = Object.fromEntries(
+    Object.entries(previous.axWindowsByPid).filter(
+      ([pid]) =>
+        pids.has(Number(pid)) &&
+        sameNativeWindows(
+          previous.windows.filter((window) => window.pid === Number(pid)),
+          windows.filter((window) => window.pid === Number(pid)),
+        ),
+    ),
+  );
+  return { ...previous, windows, browserTabs, browserCounts, axWindowsByPid };
+}
+
 /** Publish the native list first. Each optional query enriches it independently. */
 export async function loadWindowData(
   publish: (data: WindowSearchData) => void,
   queries: WindowDataQueries = systemQueries,
+  previous: WindowSearchData = emptyWindowData(),
 ): Promise<void> {
   const windows = await queries.queryWindows();
 
@@ -94,8 +134,7 @@ export async function loadWindowData(
   }
 
   let snapshot: WindowSearchData = {
-    ...emptyWindowData(),
-    windows,
+    ...retainWindowData(previous, windows),
     metadataByPid: initialMetadata,
   };
   publish(snapshot);
@@ -118,70 +157,76 @@ export async function loadWindowData(
     update({ axWindowsByPid: { ...snapshot.axWindowsByPid, [pid]: axWindows } });
   }
 
-  await Promise.all([
-    queries.getRunningApplications
-      ? queries
-          .getRunningApplications()
-          .then(async (applications) => {
-            update({ applications });
-            await Promise.all(applications.filter((app) => !byPid.has(app.pid)).map((app) => loadAXWindows(app.pid)));
-          })
-          .catch((error) => console.error("Failed to resolve running applications:", error))
-      : Promise.resolve(),
-    queries.getApplicationOrder
-      ? queries
-          .getApplicationOrder()
-          .then((applicationOrder) => update({ applicationOrder }))
-          .catch((error) => console.error("Failed to resolve application order:", error))
-      : Promise.resolve(),
-    missingMetadataPids.length > 0
-      ? queries
-          .getRunningApplicationMetadata(missingMetadataPids)
-          .then((resolved) => update({ metadataByPid: { ...snapshot.metadataByPid, ...resolved } }))
-          .catch((error) => console.error("Failed to resolve application metadata:", error))
-      : Promise.resolve(),
-    ...[...browsers.values()].map(async (browser) => {
-      const nativeBrowserWindows = browserWindowsById.get(browser.id);
-      try {
-        if (!queries.getBrowserWindows) {
-          const summary = await queries.getBrowserSummary(browser, nativeBrowserWindows);
-          update({ browserCounts: { ...snapshot.browserCounts, [browser.id]: summary } });
-          return;
-        }
+  async function loadApplications() {
+    if (!queries.getRunningApplications) return;
+    try {
+      const applications = await queries.getRunningApplications();
+      const livePids = new Set([...byPid.keys(), ...applications.map((app) => app.pid)]);
+      update({
+        applications,
+        axWindowsByPid: Object.fromEntries(
+          Object.entries(snapshot.axWindowsByPid).filter(([pid]) => livePids.has(Number(pid))),
+        ),
+      });
+      const windowlessApps = applications.filter((app) => !byPid.has(app.pid));
+      await Promise.all(windowlessApps.map((app) => loadAXWindows(app.pid)));
+    } catch (error) {
+      console.error("Failed to resolve running applications:", error);
+    }
+  }
 
-        // Publish the cheap window count first, then fill in tabs once the helper finishes.
-        if (
-          nativeBrowserWindows &&
-          nativeBrowserWindows.length > 1 &&
-          nativeBrowserWindows.every((window) => window["has-ax-reference"] !== false)
-        ) {
-          update({
-            browserCounts: { ...snapshot.browserCounts, [browser.id]: { windows: nativeBrowserWindows.length } },
-          });
-        }
+  async function loadApplicationOrder() {
+    if (!queries.getApplicationOrder) return;
+    try {
+      update({ applicationOrder: await queries.getApplicationOrder() });
+    } catch (error) {
+      console.error("Failed to resolve application order:", error);
+    }
+  }
 
-        const browserWindows = await queries.getBrowserWindows(browser, nativeBrowserWindows);
-        update({
-          browserCounts: {
-            ...snapshot.browserCounts,
-            [browser.id]: {
-              windows: browserWindows.length,
-              tabs:
-                browserWindows.length === 1 && !browserWindows[0].tabListUnavailable
-                  ? browserWindows[0].tabs.length
-                  : undefined,
-            },
-          },
-          browserTabs: { ...snapshot.browserTabs, [browser.id]: browserWindows },
-        });
-      } catch (error) {
-        console.error(`Failed to load ${browser.appName} tabs:`, error);
+  async function loadMetadata() {
+    if (missingMetadataPids.length === 0) return;
+    try {
+      const resolved = await queries.getRunningApplicationMetadata(missingMetadataPids);
+      update({ metadataByPid: { ...snapshot.metadataByPid, ...resolved } });
+    } catch (error) {
+      console.error("Failed to resolve application metadata:", error);
+    }
+  }
+
+  async function loadBrowserTabs(browser: NonNullable<ReturnType<typeof getBrowserByAppName>>) {
+    const native = browserWindowsById.get(browser.id);
+    try {
+      if (!queries.getBrowserWindows) {
+        const summary = await queries.getBrowserSummary(browser, native);
+        update({ browserCounts: { ...snapshot.browserCounts, [browser.id]: summary } });
+        return;
       }
-    }),
-    ...[...byPid]
-      .filter(([, processWindows]) =>
-        processWindows.every((window) => window["has-ax-reference"] === false && !getBrowserByAppName(window.app)),
-      )
-      .map(([pid]) => loadAXWindows(pid)),
+      // Publish the cheap window count first, preserving any valid cached summary.
+      if (native && native.length > 1 && native.every((window) => window["has-ax-reference"] !== false)) {
+        const summary = snapshot.browserCounts[browser.id] ?? { windows: native.length };
+        update({ browserCounts: { ...snapshot.browserCounts, [browser.id]: summary } });
+      }
+      const windows = await queries.getBrowserWindows(browser, native);
+      update({
+        browserCounts: { ...snapshot.browserCounts, [browser.id]: summarizeBrowserWindows(windows) },
+        browserTabs: { ...snapshot.browserTabs, [browser.id]: windows },
+      });
+    } catch (error) {
+      console.error(`Failed to load ${browser.appName} tabs:`, error);
+    }
+  }
+
+  const fallbackPids = [...byPid]
+    .filter(([, processWindows]) =>
+      processWindows.some((window) => window["has-ax-reference"] === false && !getBrowserByAppName(window.app)),
+    )
+    .map(([pid]) => pid);
+  await Promise.all([
+    loadApplications(),
+    loadApplicationOrder(),
+    loadMetadata(),
+    ...[...browsers.values()].map(loadBrowserTabs),
+    ...fallbackPids.map(loadAXWindows),
   ]);
 }

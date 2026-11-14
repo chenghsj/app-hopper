@@ -1,5 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
-
 export function companionReleasePlan(version: string, pinnedVersion: string | undefined, dryRun: boolean) {
   if (!/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(version)) throw new Error("Invalid companion version");
   if (!dryRun && pinnedVersion) {
@@ -19,22 +17,4 @@ export function companionReleasePlan(version: string, pinnedVersion: string | un
     signed: `dist/companion/release/app-hopper-companion-${version}.xpi`,
     url: `https://github.com/chenghsj/app-hopper/releases/download/companion-v${version}/app-hopper-companion-${version}.xpi`,
   };
-}
-
-export function assertCompanionPackageContents(
-  actualManifest: unknown,
-  expectedManifest: unknown,
-  actualBackground: Buffer,
-  expectedBackground: Buffer,
-  names: string[],
-) {
-  if (!names.some((name) => /^META-INF\/(mozilla\.rsa|cose\.sig)$/i.test(name))) {
-    throw new Error("Missing Mozilla signature files");
-  }
-  if (names.some((name) => !["manifest.json", "background.js"].includes(name) && !name.startsWith("META-INF/"))) {
-    throw new Error("Unexpected files in signed companion");
-  }
-  if (!isDeepStrictEqual(actualManifest, expectedManifest))
-    throw new Error("Signed manifest differs from release source");
-  if (!actualBackground.equals(expectedBackground)) throw new Error("Signed background differs from release build");
 }

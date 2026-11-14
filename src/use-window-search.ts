@@ -15,7 +15,7 @@ function readCachedWindowData(): WindowSearchData | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as WindowSearchData;
     if (!parsed || !Array.isArray(parsed.windows)) return null;
-    return parsed;
+    return { ...emptyWindowData(), ...parsed };
   } catch {
     return null;
   }
@@ -38,15 +38,22 @@ export function useWindowSearch(enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    if (refreshKey > 0 || data.windows.length === 0) {
-      setIsLoading(true);
-    }
-    void loadWindowData((snapshot) => {
-      if (cancelled) return;
-      setData(snapshot);
-      writeCachedWindowData(snapshot);
-      setIsLoading(false);
-    })
+    let completeSnapshot: WindowSearchData | undefined;
+    setIsLoading(true);
+    void loadWindowData(
+      (snapshot) => {
+        if (cancelled) return;
+        completeSnapshot = snapshot;
+        setData(snapshot);
+      },
+      undefined,
+      data,
+    )
+      .then(() => {
+        if (cancelled || !completeSnapshot) return;
+        // Persist once, while the visible list receives fresh core data and each enrichment as it arrives.
+        writeCachedWindowData(completeSnapshot);
+      })
       .catch(async (error) => {
         if (cancelled) return;
         await showToast({

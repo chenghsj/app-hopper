@@ -27,6 +27,8 @@ The Release contains the signed XPI, reviewer source ZIP and SHA256SUMS. The wor
 
 ## Failures and recovery
 
+`scripts/companion-release-artifacts.ts` owns local XPI inspection, release-file preparation and manual pinning. Both paths check identity, version and signature metadata; CI additionally requires the exact built manifest/background and rejects unexpected files. `tests/companion-artifacts.test.ts` exercises both policies with real ZIP fixtures. The workflow continues to own Mozilla submission, GitHub publication, anonymous-download verification and the final Git push.
+
 - Build-only success proves build/lint/workflow behavior; it does not authenticate the Mozilla credentials or prove real signing.
 - If Mozilla requires manual review or the approval wait times out, check the existing submission in the Mozilla Developer Hub. Do not blindly resubmit that same version or start concurrent signing. Download the signed file when it becomes available and follow the manual release instructions in [Firefox integration](firefox-integration.md#release).
 - Artifacts, including any returned signed XPI, are retained for 14 days even on later failures. Do not replace an existing published XPI under the same version.

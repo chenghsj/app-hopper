@@ -16,8 +16,7 @@ test("partial tab URLs remain searchable for every browser engine", async () => 
   ];
   const load = createLoader({
     "../windows": { queryWindows: async () => [] },
-    "./chromium": { getChromiumWindows: async () => windows },
-    "./webkit": { getWebKitWindows: async () => windows },
+    "./native": { getNativeBrowserWindows: async () => windows },
     "./firefox": { getFirefoxWindows: async () => windows },
   });
   for (const engine of ["chromium", "webkit", "firefox"]) {
@@ -40,7 +39,7 @@ test("WebKit keeps normal and minimized dialog windows in the same snapshot", as
   ].map((window) => ({ ...window, frame: { x: 0, y: 0, w: 800, h: 600 } }));
   const { getBrowserWindows } = createLoader({
     "../helpers/browser-helper": {
-      runBrowserHelper: async (_source, _binary, _directory, args) =>
+      runBrowserHelper: async (_name, _directory, args) =>
         JSON.stringify(
           (JSON.parse(args[2]) as { id: number; title: string }[]).map((window) => ({
             id: String(window.id),

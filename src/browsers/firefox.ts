@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { createConnection } from "node:net";
 import path from "node:path";
-import type { BrowserSummary } from "./chromium";
+import type { BrowserSummary } from "./types";
 import type { BrowserConfig, BrowserWindow } from "./types";
 import { runBrowserHelper } from "../helpers/browser-helper";
 import { assertNativeTabTarget } from "../helpers/browser-tab-id";
@@ -9,6 +9,7 @@ import { sortWindows } from "../helpers/window-utils";
 import { queryWindows, Window } from "../windows";
 import type { GeckoBrowserId } from "./gecko-config";
 import { FIREFOX_DIRECTORY, ZEN_DIRECTORY } from "./firefox-integration";
+import { reconcileFirefoxWindows } from "./firefox-reconciliation";
 
 const DIRECTORY = FIREFOX_DIRECTORY;
 const MAX_BYTES = 1024 * 1024;
@@ -181,7 +182,7 @@ export async function getFirefoxWindows(
   );
   let axWindows: BrowserWindow[];
   try {
-    const stdout = await runBrowserHelper("firefox-ax.swift", "firefox-ax", DIRECTORY, ["list", appName, payload]);
+    const stdout = await runBrowserHelper("firefox-ax", DIRECTORY, ["list", appName, payload]);
     axWindows = parseAXWindows(stdout);
   } catch (error) {
     if (!bridgeWindows) throw error;
@@ -195,26 +196,7 @@ export async function getFirefoxWindows(
   }
   if (!bridgeWindows) return axWindows;
 
-  // Companion IDs are profile-local, not native IDs. Replace AX rows only when
-  // the complete tab-title signature (or active title for unavailable AX rows) is unique on both sides.
-  const signature = (window: BrowserWindow) => JSON.stringify(window.tabs.map((tab) => tab.title).sort());
-  const covered = new Set<string>();
-  const reconciled = bridgeWindows.map((window) => {
-    if (!window.tabs.length || window.tabs.some((tab) => !tab.title)) return window;
-    const key = signature(window);
-    const matches = axWindows.filter((candidate) =>
-      candidate.tabListUnavailable ? candidate.title === window.title && !!window.title : signature(candidate) === key,
-    );
-    const matchingBridges = bridgeWindows.filter((candidate) =>
-      matches[0]?.tabListUnavailable ? candidate.title === window.title : signature(candidate) === key,
-    );
-    if (matches.length !== 1 || matchingBridges.length !== 1) {
-      return window;
-    }
-    covered.add(matches[0].id);
-    return { ...matches[0], ...window, space: matches[0].space, tabListUnavailable: false };
-  });
-  return [...reconciled, ...axWindows.filter((window) => !covered.has(window.id))];
+  return reconcileFirefoxWindows(bridgeWindows, axWindows, nativeWindows.length);
 }
 
 export async function getFirefoxSummary(
@@ -270,5 +252,5 @@ export async function focusFirefoxTab(
     args.push(String(matched.pid));
   }
 
-  await runBrowserHelper("firefox-ax.swift", "firefox-ax", DIRECTORY, args);
+  await runBrowserHelper("firefox-ax", DIRECTORY, args);
 }

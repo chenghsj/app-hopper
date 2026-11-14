@@ -15,7 +15,7 @@ App Hopper submits Swift sources and their built executables together for Raycas
 | `firefox-ax`     | `assets/firefox-ax.swift`     | Accessibility fallback for Firefox/Zen tabs. |
 | `firefox-bridge` | `assets/firefox-bridge.swift` | Firefox/Zen native messaging host.           |
 
-The three browser AX helpers also compile `assets/browser-tab-references.swift` and `assets/browser-helper-runtime.swift`. Their source hashes include both shared files.
+The three browser AX helpers also compile `assets/browser-tab-references.swift`, `assets/browser-helper-runtime.swift`, and `assets/browser-accessibility.swift`. Their source hashes include all shared files. The Accessibility source owns common attribute access and window discovery; each browser keeps its own scan limits and enhanced-UI policy.
 
 ## Rebuild and verify
 
@@ -36,9 +36,9 @@ At runtime, the extension verifies a bundled binary's checksum and selects it us
 ## Process behavior
 
 - Permission checks and window discovery run short-lived helpers.
-- Browser AX helpers use one process per engine with serialized JSON-line requests, preserving exact tab references. Closing stdin ends the session.
+- Browser AX helpers use one process per browser with serialized JSON-line requests, preserving exact tab references. A slow browser cannot block or expire another browser's session. Closing stdin ends the session.
 - Firefox/Zen owns the native messaging host process. Its stdout is reserved for length-prefixed messages; tab requests travel through per-user Unix sockets. See [Firefox integration](firefox-integration.md).
-- No browsing history or session-restore files are read. Tab snapshots are not persisted.
+- No browsing history or session-restore files are read. Helpers exchange current tab data through local IPC. Raycast keeps the latest search snapshot, including window/tab titles and URLs, in its local Cache to populate the next launch. Refresh validates live targets; the helpers do not write browser session files.
 
 ## Review scope
 

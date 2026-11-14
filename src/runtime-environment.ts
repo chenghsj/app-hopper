@@ -2,8 +2,9 @@ import fs from "node:fs";
 import { platform } from "node:os";
 import path from "node:path";
 import { usePromise } from "@raycast/utils";
-import nativeHelpers from "../assets/native-helpers.json";
-import { execBinary, getRaycastPaths, resolveHelperPaths, runSwiftHelper } from "./helpers/applescript";
+import { nativeHelpers } from "./native-helper-catalog";
+import { execBinary, getRaycastPaths } from "./helpers/applescript";
+import { resolveNativeHelper, runNativeHelper } from "./helpers/native-helper";
 
 export type RuntimeStatus = {
   kind: "checking" | "ready" | "accessibility" | "developer-tools" | "unsupported" | "error";
@@ -24,7 +25,7 @@ export async function checkRuntimeEnvironment(): Promise<RuntimeStatus> {
     const support = getRaycastPaths().supportPath ?? path.resolve(".raycast-swift-build");
     const needsCompiler = nativeHelpers.helpers.some((helper) => {
       if (helper.name === "firefox-bridge") return false; // The Firefox companion is optional.
-      const paths = resolveHelperPaths(helper.source, helper.name, support, helper.additionalSources);
+      const paths = resolveNativeHelper(helper.name, support);
       return !paths.bundledBinaryPath && !fs.existsSync(paths.binaryPath);
     });
     if (needsCompiler) {
@@ -36,7 +37,7 @@ export async function checkRuntimeEnvironment(): Promise<RuntimeStatus> {
       }
     }
 
-    const raw = await runSwiftHelper("runtime-status.swift", "runtime-status", support, []);
+    const raw = await runNativeHelper("runtime-status", support, []);
     const status: unknown = JSON.parse(raw);
     if (!status || typeof status !== "object" || !("accessibility" in status)) return { kind: "error" };
     if (status.accessibility === true) return { kind: "ready" };

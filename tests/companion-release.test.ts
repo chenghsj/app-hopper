@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { companionReleasePlan, assertCompanionPackageContents } from "../scripts/companion-release-plan";
+import { companionReleasePlan } from "../scripts/companion-release-plan";
 
 test("build-only runs can validate the published version without signing it again", () => {
   assert.equal(companionReleasePlan("1.0.1", "1.0.1", true).tag, "companion-v1.0.1");
@@ -19,27 +19,5 @@ test("release paths accept only manifest versions and preserve the public downlo
   assert.equal(
     companionReleasePlan("1.0.2", "1.0.1", false).url,
     "https://github.com/chenghsj/app-hopper/releases/download/companion-v1.0.2/app-hopper-companion-1.0.2.xpi",
-  );
-});
-
-test("release content verification rejects unsigned, wrong-version and modified packages", () => {
-  const manifest = { version: "1.0.2", name: "App Hopper Companion" };
-  const code = Buffer.from("release background");
-  const entries = ["manifest.json", "background.js", "META-INF/mozilla.rsa"];
-  assert.doesNotThrow(() =>
-    assertCompanionPackageContents({ name: manifest.name, version: manifest.version }, manifest, code, code, entries),
-  );
-  assert.throws(() => assertCompanionPackageContents(manifest, manifest, code, code, entries.slice(0, 2)), /signature/);
-  assert.throws(
-    () => assertCompanionPackageContents({ ...manifest, version: "1.0.1" }, manifest, code, code, entries),
-    /manifest/,
-  );
-  assert.throws(
-    () => assertCompanionPackageContents(manifest, manifest, Buffer.from("changed"), code, entries),
-    /background/,
-  );
-  assert.throws(
-    () => assertCompanionPackageContents(manifest, manifest, code, code, [...entries, "extra.js"]),
-    /Unexpected/,
   );
 });

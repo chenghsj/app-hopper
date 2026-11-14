@@ -47,7 +47,7 @@ struct NSRunningApplication {
 
 func findBrowserPIDs(appName: String, nativeWindows: [NativeWindowInput]) -> [Int32] { [20] }
 func discoverAXWindows(
-  pid: Int32, expectedWindowIds: Set<CGWindowID>, maxElementId: UInt64 = 500
+  pid: Int32, expectedWindowIds: Set<CGWindowID>, maxElementId: UInt64 = 500, enhancedUI: Bool = false
 ) -> [CGWindowID: AXUIElement] { [10: window] }
 func stringAttr(_ element: AXUIElement, _ attr: String) -> String {
   if attr == kAXSubroleAttribute { return windowSubrole }

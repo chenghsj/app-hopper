@@ -4,7 +4,7 @@ App Hopper can optionally use a Firefox companion to list current tab titles and
 
 ## User setup
 
-1. Run **Set up Firefox Integration** in Raycast, or choose that action on Firefox in App Hopper.
+1. Open **App Hopper**, select Firefox, then press **⌘K** and choose **Set up Firefox Integration**.
 2. Choose **Enable Firefox Integration**. App Hopper downloads the companion, verifies its pinned SHA-256 and manifest identity/version, sets up the per-user native helper, and opens the downloaded `.xpi` in Firefox.
 3. Confirm installation in Firefox. Firefox verifies Mozilla's signature; App Hopper cannot bypass that check or the confirmation prompt. Return to Raycast and choose **Check Connection**, then refresh the App Hopper list to load current URLs.
 
@@ -18,7 +18,7 @@ Packaged builds copy the bundled native host into the current user's helper dire
 
 Each App Hopper build pins `{ version, xpiUrl, sha256 }` in `assets/companion-integration.json`. The URL points directly to a hosted signed `.xpi`, rather than a store page. Downloads require HTTPS, including redirects, and are limited to 10 MiB, five redirects, and a 30-second network deadline. The companion's ID and version must match the pinned release. Firefox remains the cryptographic signature verifier.
 
-A verified package is cached locally, and checked again before reuse. Failed downloads do not replace an existing cache entry or open Firefox. Temporary files are removed after failure. The cache contains only installation packages, never a tab/URL snapshot.
+A verified package is cached locally, and checked again before reuse. Failed downloads do not replace an existing cache entry or open Firefox. Temporary files are removed after failure. This companion package directory contains installation packages. Separately, Raycast caches the latest search snapshot, including tab titles and URLs, locally to populate the next launch. Refresh checks live targets.
 
 ## Updates and repair
 
@@ -66,7 +66,11 @@ The bridge tests compile the actual Swift host and execute the actual companion 
 
 The Raycast settings screen and **Repair Local Helper** flow were also verified in the native app: an outdated helper showed a repair entry point, and repair completed with the state **Local helper ready — waiting for the Firefox companion to connect**. During that earlier test, no enable action was exposed because the signed download was not yet configured. The signed 1.0.1 XPI is now hosted and pinned; this does not establish browser installation acceptance.
 
-The remaining release checks are the signed-XPI handoff and Firefox confirmation on a clean installation, connection and background URL refresh, exact focus across two windows and moved/closed tabs, restart persistence, update, repair, and removal. Record the Firefox/macOS versions and results. Private-window checks require explicit user permission. See the [compatibility checklist](compatibility.md) for clean-account and downloaded-install checks.
+On 2026-11-13, Firefox 160.0 with companion 1.0.1 passed live background-URL search, exact selection among identically titled test tabs in one window, and normal quit/relaunch reconnection in the existing profile. The original tab URL set was restored using Firefox's **Restore Previous Session**. See the [local acceptance record](compatibility.md#local-browser-acceptance-2026-11-13) for the tested working tree and evidence limits.
+
+The same profile subsequently passed exact focus across two windows, safe rejection of moved/closed-tab results, refresh recovery, repair of a healthy helper, local removal, and re-enable/reinstallation through Firefox's confirmation. The downloaded 1.0.1 XPI matched the release pin, and connection recovered. See the [follow-up record](compatibility.md#firefox-follow-up-2026-11-13) and the [URL-based fix for same-title window duplicates](compatibility.md#same-title-window-reconciliation-fix-2026-11-13). Windows with insufficient matching evidence remain separate.
+
+The remaining release checks are first installation in a clean account, a version upgrade, and repair of a deliberately stale/damaged installation. Private-window checks require explicit user permission. See the [compatibility checklist](compatibility.md) for clean-account and downloaded-install checks.
 
 References: [Mozilla self-distribution](https://extensionworkshop.com/documentation/publish/self-distribution/), [native messaging](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Native_messaging).
 

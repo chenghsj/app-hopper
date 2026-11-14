@@ -1,13 +1,15 @@
+import * as nativeCatalog from "../src/native-helper-catalog";
 import type { MockValue, MockModules } from "./load-ts.ts";
-import type { TestNode } from "./render-ui.ts";
+import { renderer, findAll, type TestNode } from "./render-ui.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import createLoader from "./load-ts.ts";
 
 function modules(extra: MockModules = {}) {
   const load = createLoader({
+    "../native-helper-catalog": { ...nativeCatalog, nativeHelperSourceHash: () => "v1" },
     "../helpers/browser-helper": {
-      runBrowserHelper: (...args) => load("src/helpers/applescript.ts").runSwiftHelper(...args),
+      runBrowserHelper: (...args) => load("src/helpers/native-helper.ts").runNativeHelper(...args),
     },
     "@raycast/api": { environment: { supportPath: "/mock" } },
     "node:child_process": {
@@ -185,7 +187,7 @@ test("browser tabs are cached in the root snapshot without blocking the initial 
   assert.deepEqual(snapshots.at(-1).browserCounts.chrome, { windows: 1, tabs: 1 });
 });
 
-test("AX fallback is only queried for processes whose native windows all lack AX references", async () => {
+test("AX fallback is queried for processes with any missing native reference", async () => {
   const { loadWindowData } = modules()("src/window-data.ts");
   const queried: number[] = [],
     snapshots: MockValue[] = [];
@@ -204,8 +206,8 @@ test("AX fallback is only queried for processes whose native windows all lack AX
       return [];
     },
   });
-  assert.deepEqual(queried, [30]);
-  assert.deepEqual(snapshots.at(-1).axWindowsByPid, { 30: [] });
+  assert.deepEqual(queried, [20, 30]);
+  assert.deepEqual(snapshots.at(-1).axWindowsByPid, { 20: [], 30: [] });
 });
 
 test("Chromium summary uses the native Swift helper and skips it when multiple accessible windows exist", async () => {
@@ -221,7 +223,7 @@ test("Chromium summary uses the native Swift helper and skips it when multiple a
       ],
     },
   ];
-  const { getChromiumSummary } = modules({
+  const { getNativeBrowserSummary } = modules({
     "node:fs": { existsSync: () => true },
     "node:child_process": {
       execFile: (bin, args, options, callback) => {
@@ -233,10 +235,10 @@ test("Chromium summary uses the native Swift helper and skips it when multiple a
         callback(null, "[]", "");
       },
     },
-  })("src/browsers/chromium.ts");
+  })("src/browsers/native.ts");
 
   const singleNative = [{ ...native, id: 10777, app: "Microsoft Edge", space: 3 }];
-  assert.deepEqual(await getChromiumSummary({ appName: "Microsoft Edge" }, singleNative), {
+  assert.deepEqual(await getNativeBrowserSummary({ appName: "Microsoft Edge", engine: "chromium" }, singleNative), {
     windows: 1,
     tabs: 2,
   });
@@ -248,7 +250,7 @@ test("Chromium summary uses the native Swift helper and skips it when multiple a
     { ...native, id: 57812, app: "Google Chrome", space: 1 },
     { ...native, id: 57817, app: "Google Chrome", space: 3 },
   ];
-  assert.deepEqual(await getChromiumSummary({ appName: "Google Chrome" }, multiNative), {
+  assert.deepEqual(await getNativeBrowserSummary({ appName: "Google Chrome", engine: "chromium" }, multiNative), {
     windows: 2,
   });
   assert.equal(calls.length, 0);
@@ -449,52 +451,24 @@ test("off-space app records produce an app action that restores UI only after a 
       return [];
     },
   });
-  const component = (name: string) =>
-    Object.assign(() => {}, {
-      Item: `${name}.Item`,
-      Section: `${name}.Section`,
-      EmptyView: `${name}.EmptyView`,
-      Push: `${name}.Push`,
-    });
-  const ui = {
-    Action: component("Action"),
-    ActionPanel: component("ActionPanel"),
-    List: component("List"),
-    Icon: {},
-    Keyboard: { Shortcut: { Common: { Refresh: {} } } },
-    Toast: { Style: {} },
-    closeMainWindow: async () => {
-      ops.calls.push("closed");
-    },
-    showToast: async () => {
-      throw new Error("Unexpected failure toast");
-    },
-  };
-  const { default: Command } = modules({
-    "@raycast/api": ui,
-    react: { useMemo: (fn) => fn(), useState: (initial) => [initial, () => {}] },
-    "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    "./use-window-search": {
-      useWindowSearch: () => ({ ...snapshot, isLoading: false, refreshWindows() {}, setWindows() {} }),
-    },
-    "./runtime-environment": {
-      useRuntimeEnvironment: () => ({ status: { kind: "ready" }, revalidate() {} }),
+  const view = renderer(snapshot, {
+    "@raycast/api": {
+      closeMainWindow: async () => {
+        ops.calls.push("closed");
+      },
+      showToast: async () => {
+        throw new Error("Unexpected failure toast");
+      },
     },
     "./window-focus": { activateApplication: (group) => activateApplication(group, ops) },
-    "./app-windows": {},
-    "./browser-windows": {},
-    "./firefox-integration": {},
-  })("src/app-hopper.tsx");
-  function find(node: MockValue, predicate: (node: TestNode) => boolean): MockValue {
-    if (Array.isArray(node)) return node.map((child) => find(child, predicate)).find(Boolean);
-    if (!node || typeof node !== "object") return;
-    if (predicate(node)) return node;
-    return find(node.props?.children, predicate) || find(node.props?.actions, predicate);
-  }
-  const item = find(Command(), (node) => node.type === ui.List.Item && node.props.title === "Fixture App");
+  });
+  const item = findAll(
+    view.render(),
+    (node) => node.type === view.ui.List.Item && node.props.title === "Fixture App",
+  )[0];
   assert(item, "An app must remain in the root menu even though its CG windows are off-space and have no AX reference");
   assert.equal(item.props.subtitle, "");
-  const action = find(item, (node) => node.type === ui.Action && node.props.title === "Show Application");
+  const action = findAll(item, (node) => node.type === view.ui.Action && node.props.title === "Show Application")[0];
   assert(action);
   await action.props.onAction();
   assert.deepEqual(ops.calls, ["query-ax", "reopen", "closed"]);
