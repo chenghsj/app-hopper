@@ -367,7 +367,7 @@ test("AX subpage refresh updates its own snapshot and remains available when emp
   };
   const { AXWindowsView } = modules({
     "@raycast/api": ui,
-    "@raycast/utils": {},
+    "@raycast/utils": { runAppleScript: async () => response },
     react: {
       useState: (initial) => {
         const i = cursor++;
@@ -383,9 +383,6 @@ test("AX subpage refresh updates its own snapshot and remains available when emp
       useEffect: () => {},
     },
     "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-    "node:child_process": {
-      execFile: (_bin, _args, _options, callback) => callback(null, response, ""),
-    },
   })("src/app-windows.tsx");
   const props = {
     app,
