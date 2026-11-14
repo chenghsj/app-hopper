@@ -49,6 +49,24 @@ Opera 140.0 was checked in the rebuilt local Raycast extension on macOS 27.2.1 (
 
 Opera's AX tab strip requires deeper traversal than Chrome's, and its scripting tab class is `OpTb`. Native regressions cover both differences and exact retained-tab focus after same-title tabs reorder. URL enrichment continues to omit ambiguous same-title matches. Opera workspaces, private windows, multiple windows, and other Opera/macOS versions still require manual acceptance.
 
+### Orion acceptance, 2026-11-14
+
+Orion 1.1.3 (152) exposes ordinary and pinned tabs in separate AX tab groups. The helper previously read `AXTabs` from only the first group, omitting pinned tabs. Discovery now reads every group and deduplicates repeated AX objects without merging distinct same-title tabs.
+
+In the rebuilt local Raycast extension, a window showing three ordinary tabs and one pinned tab changed from three listed tabs to four. Refresh showed both Orion windows with the correct counts. A background test tab was found by its unique URL fragment, and selecting it activated that exact URL. Selecting the restored pinned row activated the pinned tab in the chosen window. Both temporary tabs were closed and the original selection restored; the final native snapshot contained the original two windows and five tabs, with no test URL remaining. Private windows, vertical tabs, and other Orion/macOS versions were not tested.
+
+A cross-window follow-up found that activating Orion after raising the target could restore its previous key window, producing a focus error after the tab had already changed. WebKit focus now activates the application before raising and selecting the target window. The production-sequence regression failed before this change and passed afterward. Live Raycast checks switched to a pinned tab through the nested list and back to another window through root search; read-only AX checks confirmed the exact target window, and the window server reported zero visible Raycast main windows after completion.
+
+### Browser focus follow-up (2026-11-14)
+
+Chromium, Firefox AX, and native window focus now use the same activation order and verify the exact foreground window. Firefox/Zen companion requests also focus the uniquely reconciled macOS window; ambiguous or missing native identities fail instead of reporting success. Production-sequence regressions reproduced the old activation-order failure for Chromium, Firefox AX, and native window focus before the change.
+
+Live Raycast checks passed cross-window switching and closing the panel for Chrome, Edge, Brave, Safari, Firefox, Zen, and Opera; Orion passed the earlier follow-up above. Native window IDs and zero visible Raycast main windows were checked independently. Firefox and Zen used their connected 1.0.1 companions. Temporary local test pages were used for distinct targets.
+
+Vivaldi's browser UI is itself an AX web area: a test window with two tabs initially appeared as one fallback window-title row. Its internal UI is now traversed and both tabs/URLs are read. On Vivaldi 8.3.4191.44, AXPress returned success while only focusing the tab control. The fallback now uses the control's exact scripting tab ID, resolves its live window/index, and verifies the scripting active ID and AX selection before reporting success. Titles and cached positions do not determine the target.
+
+The original no-op-press regression failed before this fallback and passed afterward. The final local build passed live Raycast A/B switching, identical-title tabs verified by their actual page/URL, and cross-window switching in both directions. Native checks confirmed the requested window was frontmost and zero Raycast main windows remained visible after each accepted switch. Both temporary test windows and their local fixture files were removed. Private windows, workspaces, collapsed tab stacks, and other Vivaldi versions were not tested.
+
 ## Runtime behavior
 
 ### Store submission candidate, 2026-11-14
@@ -73,7 +91,7 @@ A read-only local comparison changed only helper queue sharing against the same 
 - A development checkout may compile missing helpers when developer tools are installed. An unprepared checkout without those tools shows the installation command; App Hopper never installs tools automatically.
 - The Firefox native host is copied into its per-user directory from the bundled helper when available. The optional companion still requires Mozilla signing and its own configured download.
 - Unknown Space values remain hidden. Space discovery and some AX window discovery use private macOS APIs, so compatibility must be checked after macOS/browser updates. Full-screen windows and multiple displays require explicit acceptance checks.
-- Chromium title decoration decoding currently recognizes verified English and Traditional Chinese labels. Other formats retain their original title and do not affect tab identity or activation.
+- All browsers display the reported tab title verbatim, including any pin, group, or memory-usage text supplied by the browser. App Hopper adds no pin or group accessories. Search and focus retain the same original title.
 
 ## Before claiming a supported environment
 

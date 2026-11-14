@@ -13,6 +13,7 @@ test("Raycast scopes Firefox IDs to a live session and rejects cross-profile foc
   const session = "abcdef1234567890";
   const socketPath = path.join(directory, session + ".sock");
   const commands: { tabId?: number }[] = [];
+  const nativeFocus: [number, number][] = [];
   const server = net.createServer((socket) => {
     let data = "";
     socket.on("data", (chunk) => {
@@ -37,17 +38,27 @@ test("Raycast scopes Firefox IDs to a live session and rejects cross-profile foc
     fs.rmSync(directory, { recursive: true, force: true });
   });
   const load = createLoader({
-    "../windows": { queryWindows: async () => [] },
+    "../windows": {
+      queryWindows: async () => [{ id: 155, pid: 99, app: "Firefox" }],
+      focusNativeWindowById: async (id, pid) => nativeFocus.push([id, pid]),
+    },
+    "../helpers/browser-helper": { runBrowserHelper: async () => "[]" },
     "node:os": { homedir: () => directory },
     "node:path": { ...path, join: (...parts) => (parts.at(-1).endsWith(".sock") ? socketPath : directory) },
   });
   const firefox = load("src/browsers/firefox.ts");
   const [window] = await firefox.getFirefoxWindows();
   assert.equal(window.id, session + ":2");
-  await firefox.focusFirefoxTab(window.id, window.tabs[0].id);
+  await firefox.focusFirefoxTab(window.id, window.tabs[0].id, undefined, "", "155");
   assert.equal(commands[1].tabId, 3);
+  assert.deepEqual(nativeFocus, [[155, 99]], "Companion selection must also focus the verified macOS window");
+  await assert.rejects(
+    firefox.focusFirefoxTab(window.id, window.tabs[0].id, undefined, "", "999"),
+    /identify.*window/i,
+  );
+  assert.equal(nativeFocus.length, 1, "Do not activate an unverified native window");
   await assert.rejects(firefox.focusFirefoxTab(window.id, "1111111111111111:3"), /session changed/);
-  assert.equal(commands.length, 2);
+  assert.equal(commands.length, 3);
 });
 
 test("extensionless Firefox adapter matches Chromium single-window and multi-window behavior without yabai", async () => {

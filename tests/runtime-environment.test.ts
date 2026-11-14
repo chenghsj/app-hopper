@@ -163,16 +163,21 @@ test("window discovery and actions stay disabled until setup is ready", () => {
     const effects: (() => void)[] = [];
     const load = createLoader({
       "@raycast/api": {},
+      "@raycast/utils": {},
       react: {
         useState: (value) => [typeof value === "function" ? value() : value, () => {}],
         useEffect: (fn) => effects.push(fn),
-        useCallback: (fn) => fn,
+        useSyncExternalStore: (_subscribe, get) => get(),
       },
       "./window-data": {
-        emptyWindowData: () => data,
-        loadWindowData: async () => {
-          loads++;
-        },
+        createWindowSearch: () => ({
+          getSnapshot: () => ({ data, isLoading: false }),
+          subscribe() {},
+          cancel() {},
+          refresh: async () => {
+            loads++;
+          },
+        }),
       },
     });
     load("src/use-window-search.ts").useWindowSearch(enabled);

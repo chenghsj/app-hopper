@@ -86,6 +86,9 @@ test("failed tab focus keeps the current command open for retry", async () => {
   const closed: MockValue[] = [];
   const toasts: MockValue[] = [];
   const view = renderer(snapshot, {
+    "@raycast/utils": {
+      showFailureToast: async (error, options) => toasts.push({ ...options, error }),
+    },
     "./browsers/client": {
       focusBrowserTab: async () => {
         throw new Error("Tab unavailable");
@@ -93,7 +96,6 @@ test("failed tab focus keeps the current command open for retry", async () => {
     },
   });
   view.ui.closeMainWindow = async (options: MockValue) => closed.push(options);
-  view.ui.showToast = async (toast: MockValue) => toasts.push(toast);
   const [hit] = search(view, "safari personal github");
   view.render().props.onSelectionChange(hit.props.id);
   await findAll(hit, (node) => node.props.title === "Switch to Tab")[0].props.onAction();
@@ -101,6 +103,7 @@ test("failed tab focus keeps the current command open for retry", async () => {
   assert.equal(view.render().props.searchText, "safari personal github");
   assert.equal(view.render().props.selectedItemId, hit.props.id);
   assert.equal(toasts[0].title, "Failed to switch tab");
+  assert.equal(toasts[0].error.message, "Tab unavailable");
 });
 
 test("app-name matches retain matching content in other apps; titles still rank above URLs", () => {

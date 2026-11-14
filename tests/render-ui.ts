@@ -55,14 +55,6 @@ function renderer(
     ];
   };
   const load = createLoader({
-    "@raycast/utils": {
-      useCachedState: (_key, initial) => useState(initial),
-      useCachedPromise: (_load, _args, options) => ({
-        data: options?.initialData ?? snapshot.browserWindows ?? [],
-        isLoading: false,
-        revalidate() {},
-      }),
-    },
     react: {
       useMemo: (fn) => fn(),
       useEffect: () => {},
@@ -73,7 +65,7 @@ function renderer(
     },
     "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     "./use-window-search": {
-      useWindowSearch: () => ({ ...snapshot, isLoading: false, setWindows() {}, refreshWindows() {} }),
+      useWindowSearch: () => ({ ...snapshot, isLoading: false, removeWindow() {}, refreshWindows() {} }),
     },
     "./firefox-integration": {},
     "./runtime-environment": {
@@ -81,6 +73,16 @@ function renderer(
     },
     ...mocks,
     "@raycast/api": ui,
+    "@raycast/utils": {
+      showFailureToast: async () => {},
+      useCachedState: (_key, initial) => useState(initial),
+      useCachedPromise: (_load, _args, options) => ({
+        data: options?.initialData ?? snapshot.browserWindows ?? [],
+        isLoading: false,
+        revalidate() {},
+      }),
+      ...mocks["@raycast/utils"],
+    },
   });
   const View = load(file)[exportName];
   const primitives = new Set(Object.values(ui));

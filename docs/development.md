@@ -36,6 +36,8 @@ npm run lint
 npm run verify:native
 ```
 
+Run `npm run preview:loading` to open a persistent loading-screen preview in Raycast. Confirm **Run** if asked, and press **Esc** to leave it.
+
 `npm run dev` and `npm run build` automatically prepare native helpers. They compile Apple Silicon and Intel slices, combine them into universal binaries, sign them for local use, and generate `assets/native/manifest.json`. Unchanged helpers are verified and reused.
 
 `assets/native/` is the helper snapshot included for Store review and distribution. Keep its binaries and manifest in Git so a Store build does not depend on npm lifecycle hooks or a compiler on the user's Mac. Edit Swift sources, run `npm run build:native`, and commit the updated snapshot together. See [native helper provenance](native-helpers.md).
@@ -46,7 +48,7 @@ npm run verify:native
 - `app-list-item.tsx` and `search-result-item.tsx` render those targets. `window-actions.tsx` owns focus, missing-target recovery, and refresh actions.
 - `app-window-evidence.ts` owns source coverage, browser navigation evidence, mixed native/AX search targets, and incomplete Space observations. Rows, arrangements and search retain their own presentation and ranking rules.
 - `browsers/snapshot.ts` pairs browser data with native identities, keys scans, and retains valid enrichment. `use-browser-snapshot.ts` owns navigation seeding and live refreshes; `browsers/client.ts` shares in-flight scans across callers.
-- `window-data.ts` publishes the native snapshot before named application/order/metadata/browser/AX enrichment stages. `use-stable-results.ts` commits appended row positions after rendering.
+- `window-data.ts` owns the application search snapshot lifetime: cached startup, native-first publication, enrichment, cancellation, completed-cache commits, and confirmed-window removal. `use-window-search.ts` adapts that state to React and presents Raycast failures. `use-stable-results.ts` commits appended row positions after rendering.
 - `browsers/firefox-reconciliation.ts` owns pure companion/AX matching. The Firefox adapter owns IPC and discovery.
 - `assets/browser-accessibility.swift` owns shared browser window discovery. Browser entry points retain their engine policies and tab traversal.
 
@@ -57,6 +59,8 @@ npm run verify:native
 Selection or typing holds the current row positions and Space sections. Later matches append within their section, and held rows keep receiving current data by identity. A missing target stays in place as **No longer available**, with only **Refresh List** available. Changing the query, arrangement, or explicitly refreshing rebuilds the layout. AX result identities include the expected title and subrole because an AX index can be reused after closure; focus actions also retain their live target checks.
 
 Only a completed load writes the persistent snapshot, once. Cancellation ignores later updates, and a failed refresh keeps the latest visible data without persisting its partial snapshot. Optional query failures retain available data and are logged independently.
+
+Removing a confirmed missing window invalidates the outstanding load before refreshing. Its late observations cannot restore the removed target. The cache removes that target from the last completed snapshot; a partial load never becomes the next launch's snapshot through this removal path.
 
 Browser navigation receives one browser snapshot containing its native windows and any known tabs, then revalidates them. The navigation query consumes that seed once; later refreshes rediscover native windows. Snapshot keys include the browser identity and native window state, so changed or mismatched seeds cannot reuse a different browser's layout. Simultaneous requests for the same browser and native snapshot share one in-flight scan. The request is removed when it succeeds or fails, so later refreshes read live data. Each browser has its own helper session and queue, including browsers that share an engine.
 
@@ -86,7 +90,11 @@ npm run lint
 npm test
 ```
 
-Add the changed source, helpers, manifest, listing files, and screenshots to Git. Then run `npm run verify:store`, commit the changes, and run `npm run publish`. The CLI creates a PR for Raycast review; approval and a downloaded clean-install check remain separate from local verification.
+Add the changed source, helpers, manifest, listing files, and screenshots to Git. Run `npm run prepare:store` to verify and export the current contents of tracked files to `dist/store/`. Check that directory before publishing. New files must be added to Git first.
+
+The export contains the Raycast source, runtime assets, screenshots, build/lint configuration, native build/verification scripts, and native provenance guide. Companion sources, tests, release/signing tools, agent instructions, the per-extension license file, and other development documents remain in this source repository. Links to omitted guides point here. The exported manifest retains only working extension/build commands, and its lockfile is pruned offline to remove companion-only development dependencies without changing the source lockfile.
+
+When ready, commit the changes and run `npm run publish`. This prepares the directory again and runs the Raycast CLI from `dist/store/`, so the submitted files use the same exclusions. The CLI creates a PR for Raycast review; approval and a downloaded clean-install check remain separate from local verification. `prepare:store` alone does not publish or open a PR.
 
 ### Optional Developer ID distribution
 

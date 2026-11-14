@@ -7,6 +7,9 @@ App Hopper finds running applications, windows and browser tabs on macOS.
 **Application search**:
 The root App Hopper list of running applications, windows and browser tabs, together with its query, arrangement and selected target.
 
+**Application search snapshot**:
+The observations about running applications, windows and browser tabs shown together by application search. A visible snapshot may still be receiving observations; a completed snapshot has finished gathering them.
+
 **App window evidence**:
 The available observations about an application's windows, including their source, target identity and whether their state is known.
 

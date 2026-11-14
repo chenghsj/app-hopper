@@ -21,6 +21,9 @@ function fixture(result = "focused", failure?: Error) {
       closeMainWindow: async (options) => events.push({ close: options }),
       showToast: async (toast) => events.push({ toast: toast.title }),
     },
+    "@raycast/utils": {
+      showFailureToast: async (error, options) => events.push({ toast: options.title, error }),
+    },
     "./window-focus": { activateApplication: focus, focusNativeWindow: focus },
     "./windows": { raiseAXWindow: focus, sameWindow: (a, b) => a.id === b.id && a.pid === b.pid },
     "./helpers/applescript": { getErrorMessage: (error) => error.message },
@@ -44,7 +47,8 @@ for (const [method, target] of [
   });
 
   test(`${method} keeps the command open when focus fails`, async () => {
-    const { actions, events } = fixture("focused", new Error("Focus failed"));
+    const failure = new Error("Focus failed");
+    const { actions, events } = fixture("focused", failure);
     await actions[method](target);
     assert.equal(events[0], "focus");
     assert.equal(
@@ -52,7 +56,7 @@ for (const [method, target] of [
       false,
     );
     assert.equal(
-      events.some((event) => event?.toast),
+      events.some((event) => event?.toast && event.error === failure),
       true,
     );
   });

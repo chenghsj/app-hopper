@@ -18,6 +18,16 @@ var pressSucceeds = true
 var aeSelections = 0
 var pageTitle = "Same"
 var windowSubrole = "AXStandardWindow"
+var focusVerified = true
+func activateVivaldiTab(pid: Int32, tab: AXUIElement) throws { preconditionFailure("Not a Vivaldi fixture") }
+
+var focusRequests: [(unhide: Bool, setFocused: Bool)] = []
+func focusWindow(_ window: AXUIElement, pid: Int32, windowId: CGWindowID, unhide: Bool = true, setFocused: Bool = false) throws {
+  focusRequests.append((unhide, setFocused))
+  if !focusVerified {
+    throw NSError(domain: "WindowFocus", code: 1, userInfo: [NSLocalizedDescriptionKey: "Window did not become focused"])
+  }
+}
 
 func AXIsProcessTrusted() -> Bool { true }
 func AXUIElementGetPid(_ element: AXUIElement, _ pid: UnsafeMutablePointer<Int32>) -> AXError {

@@ -367,6 +367,7 @@ test("AX subpage refresh updates its own snapshot and remains available when emp
   };
   const { AXWindowsView } = modules({
     "@raycast/api": ui,
+    "@raycast/utils": {},
     react: {
       useState: (initial) => {
         const i = cursor++;

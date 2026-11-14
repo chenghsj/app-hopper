@@ -15,7 +15,7 @@ App Hopper submits Swift sources and their built executables together for Raycas
 | `firefox-ax`     | `assets/firefox-ax.swift`     | Accessibility fallback for Firefox/Zen tabs. |
 | `firefox-bridge` | `assets/firefox-bridge.swift` | Firefox/Zen native messaging host.           |
 
-The three browser AX helpers also compile `assets/browser-tab-references.swift`, `assets/browser-helper-runtime.swift`, and `assets/browser-accessibility.swift`. Their source hashes include all shared files. The Accessibility source owns common attribute access and window discovery; each browser keeps its own scan limits and enhanced-UI policy.
+The three browser AX helpers also compile `assets/browser-tab-references.swift`, `assets/browser-helper-runtime.swift`, and `assets/browser-accessibility.swift`. The window helper and the three browser AX helpers also compile `assets/window-focus.swift`, which owns window restoration, application activation, window raising, and verification of the frontmost process and exact focused window. Their source hashes include all shared files. The Accessibility source owns common attribute access and window discovery; each browser keeps its own scan limits and enhanced-UI policy.
 
 ## Rebuild and verify
 
@@ -29,9 +29,9 @@ npm run verify:native
 
 `scripts/build-native.ts` compiles each helper with `/usr/bin/swiftc -O` for `arm64` and `x86_64`, targeting macOS 13.0, combines the slices with `lipo`, and signs the universal binary. Default signing is ad-hoc; no personal certificate or signing service is used. Existing verified outputs are reused, so remove the generated helper snapshot in a disposable checkout to force a full rebuild.
 
-`scripts/native-helpers.ts` verifies source hashes, binary checksums, both architecture slices, and strict code-signature validity. `npm run verify:store` also checks listing files, screenshot dimensions, and that the submitted sources and outputs are tracked by Git. It does not establish reproducibility across different Xcode versions, Developer ID certification, notarization, or Store approval.
+`scripts/native-helpers.ts` verifies source hashes, binary checksums, both architecture slices, and strict code-signature validity. In the [source repository](https://github.com/chenghsj/app-hopper), `npm run verify:store` also checks listing files, screenshot dimensions, and that the submitted sources and outputs are tracked by Git. It does not establish reproducibility across different Xcode versions, Developer ID certification, notarization, or Store approval.
 
-At runtime, the extension verifies a bundled binary's checksum and selects it using the current Swift source hash. A corrupt binary produces a recovery error. Tests in `tests/native-artifact.test.ts` exercise startup with compiler commands disabled and a fresh support directory.
+At runtime, the extension verifies a bundled binary's checksum and selects it using the current Swift source hash. A corrupt binary produces a recovery error. The source repository's [artifact tests](../tests/native-artifact.test.ts) exercise startup with compiler commands disabled and a fresh support directory.
 
 ## Process behavior
 

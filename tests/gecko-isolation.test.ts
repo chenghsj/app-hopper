@@ -69,7 +69,12 @@ test("Zen companions expose hidden-sidebar URLs, retain unconnected profiles and
     app: "Zen",
     frame: { x: 0, y: 0, w: 800, h: 600 },
   }));
+  const focused: [number, number][] = [];
   const firefox = createLoader({
+    "../windows": {
+      queryWindows: async () => native,
+      focusNativeWindowById: async (id, pid) => focused.push([id, pid]),
+    },
     "./firefox-integration": { FIREFOX_DIRECTORY: dirs.firefox, ZEN_DIRECTORY: dirs.zen },
     "../helpers/browser-helper": {
       runBrowserHelper: async () =>
@@ -92,7 +97,11 @@ test("Zen companions expose hidden-sidebar URLs, retain unconnected profiles and
   );
   assert(!windows.some((window: { title: string }) => window.title === "Firefox only"));
   await firefox.focusFirefoxTab(work.id, work.tabs[1].id, zen);
-  assert.deepEqual(commands["zen" + sessionA].at(-1), { command: "focus", windowId: 1, tabId: 3 });
+  assert.deepEqual(
+    commands["zen" + sessionA].filter((command) => (command as { command: string }).command === "focus"),
+    [{ command: "focus", windowId: 1, tabId: 3 }],
+  );
+  assert.deepEqual(focused, [[10, 50]], "Only activate the uniquely matched Zen profile window");
   assert.equal(commands["firefox" + sessionA].length, 0);
   await assert.rejects(firefox.focusFirefoxTab(work.id, sessionB + ":3", zen), /session changed/);
   const [firefoxWindow] = await firefox.getFirefoxWindows(undefined, []);

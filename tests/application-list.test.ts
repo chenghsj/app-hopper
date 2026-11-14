@@ -36,7 +36,7 @@ test("cold loading stays in the list and never claims there are no apps or searc
   let isLoading = true;
   const view = renderer(snapshot([]), {
     "./use-window-search": {
-      useWindowSearch: () => ({ ...snapshot([]), isLoading, setWindows() {}, refreshWindows() {} }),
+      useWindowSearch: () => ({ ...snapshot([]), isLoading, removeWindow() {}, refreshWindows() {} }),
     },
   });
   for (const query of ["", "notes"]) {
@@ -62,7 +62,7 @@ test("cached applications remain visible while their snapshot refreshes", () => 
   const data = snapshot([native(1, "Notes")]);
   const view = renderer(data, {
     "./use-window-search": {
-      useWindowSearch: () => ({ ...data, isLoading: true, setWindows() {}, refreshWindows() {} }),
+      useWindowSearch: () => ({ ...data, isLoading: true, removeWindow() {}, refreshWindows() {} }),
     },
   });
   const tree = view.render();
@@ -113,7 +113,7 @@ test("cached rows stay visible while setup is checked but cannot activate until 
     "./use-window-search": {
       useWindowSearch: (value) => {
         enabled.push(value);
-        return { ...data, isLoading: false, refreshWindows() {}, setWindows() {} };
+        return { ...data, isLoading: false, refreshWindows() {}, removeWindow() {} };
       },
     },
   });

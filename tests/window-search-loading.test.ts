@@ -4,6 +4,11 @@ import type { MockValue } from "./load-ts.ts";
 import createLoader from "./load-ts.ts";
 import { renderer, findAll } from "./render-ui.ts";
 
+const { emptyWindowData, createWindowSearch } = createLoader({})("src/window-data.ts");
+const native = { id: 10, pid: 20, app: "Firefox", title: "Current", "has-ax-reference": true };
+const tabs = [{ id: "10", title: "Current", tabs: [{ id: "tab:1", title: "Docs", url: "" }] }];
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: Error) => void;
@@ -14,189 +19,172 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function hookHarness(cached?: MockValue) {
-  let cursor = 0;
-  const state: MockValue[] = [];
-  let effect!: () => () => void;
-  const loads: {
-    publish: (data: MockValue) => void;
-    pending: ReturnType<typeof deferred<void>>;
-    previous: MockValue;
-  }[] = [];
-  const toasts: MockValue[] = [];
+function fixture(queries: Record<string, MockValue> = {}, cached?: MockValue) {
   const writes: MockValue[] = [];
-  const load = createLoader({
-    "@raycast/api": {
-      Cache: class {
-        get() {
-          return cached && JSON.stringify(cached);
-        }
-        set(_key: string, value: string) {
-          writes.push(JSON.parse(value));
-        }
-      },
-      Toast: { Style: { Failure: "failure" } },
-      showToast: async (toast: MockValue) => {
-        toasts.push(toast);
-      },
-    },
-    react: {
-      useState: (initial: MockValue) => {
-        const index = cursor++;
-        if (!(index in state)) state[index] = typeof initial === "function" ? initial() : initial;
-        return [
-          state[index],
-          (next: MockValue) => {
-            state[index] = typeof next === "function" ? next(state[index]) : next;
-          },
-        ];
-      },
-      useEffect: (callback: () => () => void) => {
-        effect = callback;
-      },
-      useCallback: (callback: MockValue) => callback,
-    },
-    "./window-data": {
-      emptyWindowData: createLoader({})("src/window-data.ts").emptyWindowData,
-      loadWindowData: (publish: (data: MockValue) => void, _queries: unknown, previous: MockValue) => {
-        const pending = deferred<void>();
-        loads.push({ publish, pending, previous });
-        return pending.promise;
-      },
-    },
-  });
-  return {
-    loads,
-    toasts,
-    writes,
-    render(enabled = true) {
-      cursor = 0;
-      return load("src/use-window-search.ts").useWindowSearch(enabled);
-    },
-    start() {
-      return effect();
-    },
-  };
-}
-
-test("initial and cached searches publish fresh windows before browser enrichment finishes", async () => {
-  const { emptyWindowData, loadWindowData } = createLoader({})("src/window-data.ts");
-  const window = {
-    id: 10,
-    pid: 20,
-    app: "Firefox",
-    title: "Current",
-    bundlePath: "/Firefox.app",
-    "has-ax-reference": true,
-  };
-  for (const cached of [undefined, { ...emptyWindowData(), windows: [window] }]) {
-    const hook = hookHarness(cached);
-    hook.render();
-    hook.start();
-    const browser = deferred<MockValue[]>();
-    const loading = loadWindowData(
-      hook.loads[0].publish,
-      {
-        queryWindows: async () => [window],
-        getRunningApplicationMetadata: async () => ({}),
-        queryAXWindows: async () => [],
-        getBrowserSummary: async () => {
-          throw new Error("Unexpected summary");
-        },
-        getBrowserWindows: () => browser.promise,
-      },
-      hook.loads[0].previous,
-    );
-    await new Promise((resolve) => setImmediate(resolve));
-    const partial = hook.render();
-    assert.equal(partial.windows.length, 1);
-    assert.deepEqual(partial.browserTabs, {});
-    assert.equal(partial.isLoading, true);
-    browser.resolve([{ id: "10", title: "Current", tabs: [{ id: "tab:1", title: "Docs", url: "" }] }]);
-    await loading;
-    hook.loads[0].pending.resolve();
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(hook.render().isLoading, false);
-    assert.equal(hook.render().windows.length, 1);
-    assert.equal(hook.render().browserTabs.firefox[0].tabs[0].title, "Docs");
-  }
-});
-
-test("fresh app/window data arrives before slow tabs without clearing valid cached browser data", async () => {
-  const { emptyWindowData, loadWindowData } = createLoader({})("src/window-data.ts");
-  const window = { id: 10, pid: 10, app: "Firefox", title: "Old", "has-ax-reference": true };
-  const cached = {
-    ...emptyWindowData(),
-    windows: [window],
-    applicationOrder: [20, 10],
-    applications: [{ pid: 20, localizedName: "Notes" }],
-    browserCounts: { firefox: { windows: 1, tabs: 2 } },
-    browserTabs: { firefox: [{ id: "old", tabs: [{ id: "tab", title: "Docs", url: "https://example.com" }] }] },
-  };
-  const hook = hookHarness(cached);
-  hook.render();
-  hook.start();
-  const browser = deferred<MockValue[]>();
-  const freshWindow = { ...window, title: "Updated" };
-  const applications = [
-    { pid: 10, localizedName: "Firefox" },
-    { pid: 30, localizedName: "Editor" },
-  ];
-  const loading = loadWindowData(
-    hook.loads[0].publish,
-    {
-      queryWindows: async () => [freshWindow],
-      getRunningApplications: async () => applications,
-      getApplicationOrder: async () => [30, 10],
+  const search = createWindowSearch({
+    queries: {
+      queryWindows: async () => [native],
       getRunningApplicationMetadata: async () => ({}),
       queryAXWindows: async () => [],
       getBrowserSummary: async () => {
         throw new Error("Unexpected summary");
       },
-      getBrowserWindows: () => browser.promise,
+      getBrowserWindows: async () => tabs,
+      ...queries,
     },
-    hook.loads[0].previous,
-  );
-  await new Promise((resolve) => setImmediate(resolve));
-  const during = hook.render();
-  assert.deepEqual(during.windows, [freshWindow]);
-  assert.deepEqual(during.applicationOrder, [30, 10]);
-  assert.deepEqual(during.applications, applications);
-  assert.deepEqual(during.browserCounts, cached.browserCounts);
-  assert.deepEqual(during.browserTabs, cached.browserTabs);
-  assert.deepEqual(hook.writes, [], "partial snapshots must not replace the next launch's cache");
-  browser.resolve([]);
-  await loading;
-  hook.loads[0].pending.resolve();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(hook.render().browserTabs.firefox, []);
-  assert.deepEqual(hook.render().browserCounts.firefox, { windows: 0, tabs: undefined });
-  assert.equal(hook.writes.length, 1);
-  assert.equal(hook.render().isLoading, false);
+    cache: {
+      get: () => cached && JSON.stringify(cached),
+      set: (_key: string, value: string) => writes.push(JSON.parse(value)),
+    },
+  });
+  const updates: MockValue[] = [];
+  const unsubscribe = search.subscribe(() => updates.push(search.getSnapshot()));
+  return { search, writes, updates, unsubscribe };
+}
+
+test("cold and cached searches publish native windows before tabs, then commit exactly once", async () => {
+  for (const cached of [undefined, { ...emptyWindowData(), windows: [native] }]) {
+    const browser = deferred<MockValue[]>();
+    const { search, writes } = fixture({ getBrowserWindows: () => browser.promise }, cached);
+    assert.deepEqual(search.getSnapshot().data.windows, cached?.windows ?? []);
+    const loading = search.refresh();
+    await tick();
+    assert.deepEqual(search.getSnapshot().data.windows, [native]);
+    assert.deepEqual(search.getSnapshot().data.browserTabs, {});
+    assert.equal(search.getSnapshot().isLoading, true);
+    assert.deepEqual(writes, []);
+    browser.resolve(tabs);
+    await loading;
+    assert.equal(search.getSnapshot().isLoading, false);
+    assert.deepEqual(search.getSnapshot().data.browserTabs.firefox, tabs);
+    assert.deepEqual(writes, [search.getSnapshot().data]);
+  }
 });
 
-test("failed refreshes finish loading and cancelled loads cannot finish a newer search", async () => {
-  const { emptyWindowData } = createLoader({})("src/window-data.ts");
-  const hook = hookHarness();
-  hook.render();
-  const cancel = hook.start();
-  hook.render().refreshWindows();
-  cancel();
-  hook.render();
-  hook.start();
-  hook.loads[0].publish({ ...emptyWindowData(), windows: [{ id: 999 }] });
-  hook.loads[0].pending.resolve();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(hook.render().isLoading, true);
-  assert.deepEqual(hook.render().windows, []);
-  hook.loads[1].pending.reject(new Error("Window query failed"));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(hook.render().isLoading, false);
-  assert.equal(hook.toasts.length, 1);
+test("fresh app data retains valid enrichment until a completed empty tab observation replaces it", async () => {
+  const browser = deferred<MockValue[]>();
+  const cached = {
+    ...emptyWindowData(),
+    windows: [native],
+    applicationOrder: [20, 10],
+    applications: [{ pid: 30, localizedName: "Notes" }],
+    browserCounts: { firefox: { windows: 1, tabs: 1 } },
+    browserTabs: { firefox: tabs },
+  };
+  const fresh = { ...native, title: "Updated" };
+  const applications = [
+    { pid: 20, localizedName: "Firefox" },
+    { pid: 40, localizedName: "Editor" },
+  ];
+  const { search, writes } = fixture(
+    {
+      queryWindows: async () => [fresh],
+      getRunningApplications: async () => applications,
+      getApplicationOrder: async () => [40, 20],
+      getBrowserWindows: () => browser.promise,
+    },
+    cached,
+  );
+  const loading = search.refresh();
+  await tick();
+  assert.deepEqual(search.getSnapshot().data.windows, [fresh]);
+  assert.deepEqual(search.getSnapshot().data.applicationOrder, [40, 20]);
+  assert.deepEqual(search.getSnapshot().data.applications, applications);
+  assert.deepEqual(search.getSnapshot().data.browserTabs, cached.browserTabs);
+  assert.deepEqual(search.getSnapshot().data.browserCounts, cached.browserCounts);
+  assert.deepEqual(writes, []);
+  browser.resolve([]);
+  await loading;
+  assert.deepEqual(search.getSnapshot().data.browserTabs.firefox, []);
+  assert.deepEqual(search.getSnapshot().data.browserCounts.firefox, { windows: 0, tabs: undefined });
+  assert.equal(writes.length, 1);
+});
+
+for (const outcome of ["success", "failure"]) {
+  test(`an older load's ${outcome} cannot publish, commit or finish a newer pending load`, async () => {
+    const firstNative = deferred<MockValue[]>();
+    const browser = deferred<MockValue[]>();
+    const fresh = { ...native, id: 11 };
+    let calls = 0;
+    const { search, writes } = fixture({
+      queryWindows: () => (++calls === 1 ? firstNative.promise : Promise.resolve([fresh])),
+      getBrowserWindows: (_browser: MockValue, windows: MockValue[]) => (windows[0].id === 11 ? browser.promise : []),
+    });
+    const first = search.refresh();
+    const second = search.refresh();
+    await tick();
+    if (outcome === "success") firstNative.resolve([native]);
+    else firstNative.reject(new Error("Obsolete failure"));
+    await first;
+    assert.deepEqual(search.getSnapshot().data.windows, [fresh]);
+    assert.equal(search.getSnapshot().isLoading, true);
+    assert.equal(search.getSnapshot().error, undefined);
+    assert.deepEqual(writes, []);
+    browser.resolve([]);
+    await second;
+    assert.equal(search.getSnapshot().isLoading, false);
+    assert.equal(writes.length, 1);
+  });
+}
+
+for (const stage of ["native", "enrichment"]) {
+  test(`cancelling during ${stage} ignores late observations and lets a fresh load recover`, async () => {
+    const pending = deferred<MockValue[]>();
+    let first = true;
+    const { search, writes, updates, unsubscribe } = fixture({
+      queryWindows: () => (stage === "native" && first ? pending.promise : Promise.resolve([native])),
+      getBrowserWindows: () => (stage === "enrichment" && first ? pending.promise : Promise.resolve(tabs)),
+    });
+    const loading = search.refresh();
+    await tick();
+    search.cancel();
+    const cancelled = search.getSnapshot();
+    const count = updates.length;
+    pending.resolve(stage === "native" ? [native] : tabs);
+    await loading;
+    assert.equal(search.getSnapshot(), cancelled);
+    assert.equal(updates.length, count);
+    assert.equal(cancelled.isLoading, false);
+    assert.deepEqual(writes, []);
+    first = false;
+    await search.refresh();
+    assert.deepEqual(search.getSnapshot().data.browserTabs.firefox, tabs);
+    assert.equal(writes.length, 1);
+    unsubscribe();
+    const subscribedCount = updates.length;
+    await search.refresh();
+    assert.equal(updates.length, subscribedCount);
+  });
+}
+
+test("a failed refresh keeps the completed snapshot and clears its error when retried", async () => {
+  const cached = { ...emptyWindowData(), windows: [native], browserTabs: { firefox: tabs } };
+  let fail = true;
+  const failure = new Error("Window query failed");
+  const { search, writes } = fixture(
+    {
+      queryWindows: async () => {
+        if (fail) throw failure;
+        return [];
+      },
+    },
+    cached,
+  );
+  await search.refresh();
+  assert.equal(search.getSnapshot().error, failure);
+  assert.deepEqual(search.getSnapshot().data, cached);
+  assert.equal(search.getSnapshot().isLoading, false);
+  assert.deepEqual(writes, []);
+  fail = false;
+  const retry = search.refresh();
+  assert.equal(search.getSnapshot().error, undefined);
+  await retry;
+  assert.deepEqual(search.getSnapshot().data.windows, []);
+  assert.equal(writes.length, 1);
 });
 
 test("fresh native identities discard closed-window and restarted-browser enrichment before tabs finish", async () => {
-  const { emptyWindowData, loadWindowData } = createLoader({})("src/window-data.ts");
+  const { emptyWindowData } = createLoader({})("src/window-data.ts");
   for (const restarted of [false, true]) {
     const first = { id: 10, pid: 10, app: "Firefox", title: "First", "has-ax-reference": true };
     const previous = {
@@ -215,10 +203,8 @@ test("fresh native identities discard closed-window and restarted-browser enrich
       axWindowsByPid: { 40: [{ pid: 40, index: 1, title: "Closed" }] },
     };
     const browser = deferred<MockValue[]>();
-    const snapshots: MockValue[] = [];
     const fresh = { ...first, pid: restarted ? 99 : first.pid };
-    const loading = loadWindowData(
-      (data: MockValue) => snapshots.push(data),
+    const { search } = fixture(
       {
         queryWindows: async () => [fresh],
         getRunningApplications: async () => [{ pid: fresh.pid, localizedName: "Firefox" }],
@@ -231,8 +217,9 @@ test("fresh native identities discard closed-window and restarted-browser enrich
       },
       previous,
     );
+    const loading = search.refresh();
     await new Promise((resolve) => setImmediate(resolve));
-    const current = snapshots.at(-1);
+    const current = search.getSnapshot().data;
     assert.deepEqual(current.windows, [fresh]);
     assert.equal(current.browserTabs.chrome, undefined);
     assert.equal(current.browserCounts.chrome, undefined);
@@ -249,23 +236,141 @@ test("fresh native identities discard closed-window and restarted-browser enrich
   }
 });
 
-test("a failed refresh retains its latest published core data without persisting a partial cache", async () => {
-  const { emptyWindowData } = createLoader({})("src/window-data.ts");
-  const cached = { ...emptyWindowData(), windows: [{ id: 10 }], applicationOrder: [20, 10] };
-  const hook = hookHarness(cached);
-  hook.render();
-  hook.start();
-  hook.loads[0].publish({ ...emptyWindowData(), windows: [{ id: 11 }] });
-  hook.loads[0].pending.reject(new Error("Window query failed"));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(hook.render().windows, [{ id: 11 }]);
-  assert.deepEqual(hook.writes, []);
-  assert.equal(hook.render().isLoading, false);
-  assert.equal(hook.toasts.length, 1);
+test("removing a confirmed missing window invalidates pending enrichment and prunes only completed cache data", async () => {
+  const other = { ...native, id: 11, title: "Other" };
+  const otherTabs = { id: "11", title: "Other", tabs: [] };
+  const cached = {
+    ...emptyWindowData(),
+    windows: [native, other],
+    applicationOrder: [20, 30],
+    browserTabs: { firefox: [...tabs, otherTabs] },
+    browserCounts: { firefox: { windows: 2 } },
+  };
+  const browser = deferred<MockValue[]>();
+  let windows = [{ ...native, title: "Updated" }, other];
+  let first = true;
+  const { search, writes } = fixture(
+    {
+      queryWindows: async () => windows,
+      getApplicationOrder: async () => [30, 20],
+      getBrowserWindows: () => (first ? browser.promise : Promise.resolve([otherTabs])),
+    },
+    cached,
+  );
+  const loading = search.refresh();
+  await tick();
+  search.removeWindow(native);
+  assert.deepEqual(search.getSnapshot().data.windows, [other]);
+  assert.deepEqual(search.getSnapshot().data.browserTabs.firefox, [otherTabs]);
+  assert.deepEqual(writes[0].windows, [other]);
+  assert.deepEqual(writes[0].applicationOrder, [20, 30], "A partial refresh must not replace committed cache data");
+  browser.resolve([...tabs, otherTabs]);
+  await loading;
+  assert.deepEqual(search.getSnapshot().data.windows, [other]);
+  assert.deepEqual(search.getSnapshot().data.browserTabs.firefox, [otherTabs]);
+  assert.equal(writes.length, 1, "The invalidated load cannot commit");
+  first = false;
+  windows = [other];
+  await search.refresh();
+  assert.equal(writes.length, 2);
+  assert.deepEqual(writes[1].applicationOrder, [30, 20]);
+});
+
+test("removing a window from a cold partial load never commits that partial observation", async () => {
+  const browser = deferred<MockValue[]>();
+  const { search, writes } = fixture({ getBrowserWindows: () => browser.promise });
+  const loading = search.refresh();
+  await tick();
+  search.removeWindow(native);
+  browser.resolve(tabs);
+  await loading;
+  assert.deepEqual(search.getSnapshot().data.windows, []);
+  assert.deepEqual(search.getSnapshot().data.browserTabs, {});
+  assert.deepEqual(writes, []);
+});
+
+test("removal keeps a reused window ID belonging to another process", async () => {
+  const reused = { ...native, pid: 99 };
+  const { search, writes } = fixture({ queryWindows: async () => [reused] });
+  await search.refresh();
+  search.removeWindow(native);
+  assert.deepEqual(search.getSnapshot().data.windows, [reused]);
+  assert.deepEqual(writes.at(-1).windows, [reused]);
+});
+
+test("corrupt or unavailable caches do not prevent a completed live search", async () => {
+  for (const get of [
+    () => "{invalid",
+    () => JSON.stringify({ windows: null }),
+    () => {
+      throw new Error("Read failed");
+    },
+  ]) {
+    const search = createWindowSearch({
+      queries: {
+        queryWindows: async () => [],
+        getRunningApplicationMetadata: async () => ({}),
+        queryAXWindows: async () => [],
+        getBrowserSummary: async () => ({ windows: 0 }),
+      },
+      cache: {
+        get,
+        set: () => {
+          throw new Error("Write failed");
+        },
+      },
+    });
+    await search.refresh();
+    assert.deepEqual(search.getSnapshot().data.windows, []);
+    assert.equal(search.getSnapshot().error, undefined);
+    assert.equal(search.getSnapshot().isLoading, false);
+  }
+});
+
+test("the React adapter renders cold failures and wires retry to the real search lifetime", async () => {
+  const failure = new Error("Accessibility query failed");
+  let fail = true;
+  const { search } = fixture({
+    queryWindows: async () => {
+      if (fail) throw failure;
+      return [];
+    },
+  });
+  const toasts: MockValue[] = [];
+  const effects: (() => void)[] = [];
+  let previousError: unknown;
+  const load = createLoader({
+    "@raycast/api": {},
+    "@raycast/utils": { showFailureToast: async (error: unknown) => toasts.push(error) },
+    "./window-data": { createWindowSearch: () => search },
+    react: {
+      useState: () => [search],
+      useSyncExternalStore: (_subscribe: MockValue, get: () => MockValue) => get(),
+      useEffect: (effect: () => void, dependencies: MockValue[]) => {
+        if (dependencies.length === 2) effects.push(effect);
+        else if (dependencies[0] !== previousError) {
+          previousError = dependencies[0];
+          effect();
+        }
+      },
+    },
+  });
+  const hook = () => load("src/use-window-search.ts").useWindowSearch();
+  hook();
+  effects[0]();
+  await tick();
+  const view = renderer(emptyWindowData(), { "./use-window-search": { useWindowSearch: hook } });
+  const empty = () => findAll(view.render(), (node) => node.type === view.ui.List.EmptyView)[0];
+  assert.equal(empty().props.title, "Failed to Load Applications");
+  assert.equal(empty().props.description, failure.message);
+  assert.deepEqual(toasts, [failure]);
+  fail = false;
+  await findAll(empty(), (node) => node.props.title === "Refresh List")[0].props.onAction();
+  await tick();
+  assert.equal(empty().props.title, "No Running Applications");
 });
 
 test("empty search results show the loading state until pending data has arrived", () => {
-  const { emptyWindowData } = createLoader({})("src/window-data.ts");
   let loading = true;
   const view = renderer(emptyWindowData(), {
     "./use-window-search": { useWindowSearch: () => ({ ...emptyWindowData(), isLoading: loading }) },

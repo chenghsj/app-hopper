@@ -7,9 +7,11 @@ final class Element: NSObject {
   let subrole: String
   let title: String
   let key: String
+  let url: String
   var children: [Element]
-  init(_ role: String, subrole: String = "", title: String = "", key: String = "", children: [Element] = []) {
+  init(_ role: String, subrole: String = "", title: String = "", key: String = "", url: String = "", children: [Element] = []) {
     self.role = role; self.subrole = subrole; self.title = title; self.key = key; self.children = children
+    self.url = url
   }
 }
 typealias AXUIElement = Element
@@ -31,24 +33,39 @@ let window: Element = {
   return Element("AXWindow", subrole: "AXStandardWindow", title: "Same", children: [content, page])
 }()
 var pressed: [String] = []
+var selectedTab = operaTabs[2]
+var pressSelects = true
+var scriptSelects = true
+var scriptedTabs: [String] = []
+func activateVivaldiTab(pid: Int32, tab: AXUIElement) throws {
+  scriptedTabs.append(tab.key)
+  if scriptSelects { selectedTab = tab }
+}
+func focusWindow(_ window: AXUIElement, pid: Int32, windowId: CGWindowID, unhide: Bool = true, setFocused: Bool = false) throws {}
 
 func AXIsProcessTrusted() -> Bool { true }
 func roleAndSubrole(_ element: Element) -> (String, String) { (element.role, element.subrole) }
-func copyAttr(_ element: Element, _ attr: String) -> Any? { attr == kAXChildrenAttribute ? element.children : nil }
+func copyAttr(_ element: Element, _ attr: String) -> Any? {
+  if attr == "AXURL" { return URL(string: element.url) }
+  return attr == kAXChildrenAttribute ? element.children : nil
+}
 func stringAttr(_ element: Element, _ attr: String) -> String {
   if attr == kAXTitleAttribute { return element.title }
   return attr == kAXSubroleAttribute ? element.subrole : ""
 }
 func boolAttr(_ element: Element, _ attr: String) -> Bool { false }
 func readTabInfo(_ element: Element) -> (title: String, selected: Bool, customUrl: String) {
-  (element.title, element === operaTabs[2], "")
+  (element.title, element === selectedTab, "")
 }
 func findBrowserPIDs(appName: String, nativeWindows: [NativeWindowInput]) -> [Int32] { [20] }
 func discoverAXWindows(pid: Int32, expectedWindowIds: Set<CGWindowID>, maxElementId: UInt64 = 500, enhancedUI: Bool = false) -> [CGWindowID: Element] { [10: window] }
 func fetchAppleEventTabUrlsByPid(pid: Int32, appName: String = "") -> [(titles: [String], urls: [String])]? { nil }
 func AXUIElementGetPid(_ element: Element, _ pid: UnsafeMutablePointer<Int32>) -> AXError { pid.pointee = 20; return .success }
 func AXUIElementPerformAction(_ element: Element, _ action: CFString) -> AXError {
-  if action as String == kAXPressAction { pressed.append(element.key) }
+  if action as String == kAXPressAction {
+    pressed.append(element.key)
+    if pressSelects { selectedTab = element }
+  }
   return .success
 }
 func AXUIElementSetAttributeValue(_ element: Element, _ attr: CFString, _ value: CFTypeRef) -> AXError { .success }

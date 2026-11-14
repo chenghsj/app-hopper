@@ -17,7 +17,8 @@ function setup(
   const targets: string[] = [];
   const steps: string[][] = [];
   const state = { installed: false, registered: false, connected: false, versions: [] as string[], release };
-  const toast = { title: "", message: "", style: "" };
+  const toast = { title: "", message: "", style: "", hide: async () => steps.push(["hide-progress"]) };
+  const failures: { error: Error; title: string }[] = [];
   const busy = { current: false };
   const options = { confirm: true, downloadFailure: false };
   const load = createLoader({
@@ -34,6 +35,7 @@ function setup(
       open: async (target, application) => steps.push(["open", target, application]),
     },
     "@raycast/utils": {
+      showFailureToast: async (error, options) => failures.push({ error, title: options.title }),
       useCachedPromise: () => ({
         data: state,
         revalidate: () => {
@@ -73,13 +75,13 @@ function setup(
     },
   });
   const { FirefoxIntegrationView } = load("src/firefox-integration.tsx");
-  return { render: () => FirefoxIntegrationView({ browserId }), state, steps, options, toast, busy, targets };
+  return { render: () => FirefoxIntegrationView({ browserId }), state, steps, options, toast, busy, targets, failures };
 }
 
 const release = { version: "1.0.0", xpiUrl: "https://example.com/signed.xpi", sha256: "a".repeat(64) };
 
 test("Firefox setup downloads a verified XPI before installing the helper and opening Firefox, then offers updates", async () => {
-  const { render, state, steps, toast, options, busy } = setup(release);
+  const { render, state, steps, toast, options, busy, failures } = setup(release);
   await find(render(), "Enable Firefox Integration").props.onAction();
   assert.deepEqual(steps, [
     ["download"],
@@ -98,8 +100,9 @@ test("Firefox setup downloads a verified XPI before installing the helper and op
   steps.length = 0;
   options.downloadFailure = true;
   await find(render(), "Reinstall Firefox Companion").props.onAction();
-  assert.deepEqual(steps, [["download"], ["refresh"]]);
-  assert.equal(toast.style, "failure");
+  assert.deepEqual(steps, [["download"], ["hide-progress"], ["refresh"]]);
+  assert.equal(failures[0].title, "Firefox integration could not be changed");
+  assert.equal(failures[0].error.message, "Checksum mismatch");
   assert.equal(busy.current, false);
   steps.length = 0;
   await find(render(), "Repair Local Helper").props.onAction();

@@ -9,6 +9,15 @@ try handleFocus(args: ["Test Browser", "10", targetID, "Same", "20", "https://ex
 precondition(pressed == ["second"], "Selected the wrong identical tab after reorder")
 pressed = []
 
+// Pressing a tab is not enough when the final browser window could not be focused.
+focusVerified = false
+do {
+  try handleFocus(args: ["Test Browser", "10", targetID, "Same", "20"])
+  fatalError("Reported success without verifying the focused window")
+} catch {}
+focusVerified = true
+pressed = []
+
 // Failure to press the AX object must not fall back to a positional Apple Event.
 pressSucceeds = false
 do {

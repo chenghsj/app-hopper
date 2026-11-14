@@ -29,6 +29,7 @@ test("shared Swift source changes invalidate the binary cache without changing s
     "browser-tab-references.swift": "references",
     "browser-helper-runtime.swift": "runtime",
     "browser-accessibility.swift": "accessibility",
+    "window-focus.swift": "focus verification",
   };
   const first = helpers(contents);
   const originalSingleHash = createHash("sha256").update(contents["runtime-status.swift"]).digest("hex").slice(0, 12);
@@ -37,7 +38,12 @@ test("shared Swift source changes invalidate the binary cache without changing s
     `/support/runtime-status-${originalSingleHash}`,
   );
 
-  const dependencies = ["browser-tab-references.swift", "browser-helper-runtime.swift", "browser-accessibility.swift"];
+  const dependencies = [
+    "browser-tab-references.swift",
+    "browser-helper-runtime.swift",
+    "browser-accessibility.swift",
+    "window-focus.swift",
+  ];
   const before = first.resolveNativeHelper("chromium-ax", "/fallback");
   for (const dependency of dependencies) {
     // A fresh loader represents the next Raycast host process after a source update.
@@ -61,5 +67,6 @@ test("shared Swift source changes invalidate the binary cache without changing s
     "/assets/browser-tab-references.swift",
     "/assets/browser-helper-runtime.swift",
     "/assets/browser-accessibility.swift",
+    "/assets/window-focus.swift",
   ]);
 });
