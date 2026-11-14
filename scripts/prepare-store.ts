@@ -1,4 +1,5 @@
-import { root } from "./native-helpers.ts";
+import path from "node:path";
+const root = path.resolve(__dirname, "..");
 import { prepareStore } from "./store-package.ts";
 
 console.log(`Store source prepared at ${prepareStore(root)}.`);

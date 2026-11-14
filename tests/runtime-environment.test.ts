@@ -7,9 +7,6 @@ function environment(
   overrides: Partial<{
     platform: string;
     version: string;
-    bundled: boolean;
-    cached: boolean;
-    tools: boolean;
     access: boolean;
     damaged: boolean;
     invalid: boolean;
@@ -18,32 +15,23 @@ function environment(
   const state = {
     platform: "darwin",
     version: "27.2",
-    bundled: true,
-    cached: false,
-    tools: false,
     access: true,
     ...overrides,
   };
   const calls: [string, string[]?][] = [];
   const load = createLoader({
     "node:os": { platform: () => state.platform },
-    "node:fs": { existsSync: () => state.cached },
     "@raycast/utils": {},
     "./helpers/applescript": {
-      getRaycastPaths: () => ({ supportPath: "/support" }),
       execBinary: async (binary, args) => {
         calls.push([binary, args]);
         if (binary === "/usr/bin/sw_vers") return { stdout: state.version };
-        if (!state.tools) throw new Error("Developer tools unavailable");
-        return { stdout: "/Library/Developer/CommandLineTools" };
+        throw new Error(`Unexpected binary: ${binary}`);
       },
     },
     "./helpers/native-helper": {
-      resolveNativeHelper: (name) => {
-        if (state.damaged) throw new Error("Damaged bundle");
-        return { binaryPath: `/support/${name}`, bundledBinaryPath: state.bundled ? `/assets/${name}` : undefined };
-      },
       runNativeHelper: async () => {
+        if (state.damaged) throw new Error("Missing package");
         calls.push(["permission-check"]);
         return state.invalid ? "invalid" : JSON.stringify({ accessibility: state.access });
       },
@@ -52,9 +40,9 @@ function environment(
   return { checkRuntimeEnvironment: load("src/runtime-environment.ts").checkRuntimeEnvironment, state, calls };
 }
 
-test("bundled and cached helpers run without developer tools, and permission checks never grant access", async () => {
-  for (const options of [{ bundled: true }, { bundled: false, cached: true }]) {
-    const check = environment(options);
+test("Store-built helpers run without developer tools, and permission checks never grant access", async () => {
+  {
+    const check = environment();
     assert.deepEqual(await check.checkRuntimeEnvironment(), { kind: "ready" });
     assert.deepEqual(
       check.calls.map(([binary]) => binary),
@@ -63,18 +51,6 @@ test("bundled and cached helpers run without developer tools, and permission che
     check.state.access = false;
     assert.deepEqual(await check.checkRuntimeEnvironment(), { kind: "accessibility" });
   }
-});
-
-test("source installations identify missing tools before attempting native queries", async () => {
-  const check = environment({ bundled: false });
-  assert.deepEqual(await check.checkRuntimeEnvironment(), { kind: "developer-tools" });
-  assert.equal(
-    check.calls.some(([binary]) => binary === "permission-check"),
-    false,
-  );
-  check.state.tools = true;
-  assert.deepEqual(await check.checkRuntimeEnvironment(), { kind: "ready" });
-  assert(check.calls.some(([binary]) => binary === "/usr/bin/xcrun"));
 });
 
 test("unsupported systems, damaged packages and malformed helper output have explicit setup states", async () => {
@@ -108,25 +84,14 @@ test("the setup view shows only the missing prerequisite and provides explicit r
   assert.match(opened, /Privacy_Accessibility$/);
   findAll(tree, (node) => node.props.title === "Check Again")[0].props.onAction();
   assert.equal(checked, 1);
-  const tools = renderer({}, {}, "src/runtime-setup.tsx", "RuntimeSetupView", {
-    status: { kind: "developer-tools" },
-    onCheck() {},
-  });
-  assert.match(tools.render().props.markdown, /xcode-select --install/);
-  assert.equal(
-    findAll(tools.render(), (node) => node.props.title === "Copy Installation Command")[0].props.content,
-    "xcode-select --install",
-  );
-  assert.equal(findAll(tools.render(), (node) => node.props.title === "Open Accessibility Settings").length, 0);
 });
 
 test("window discovery and actions stay disabled until setup is ready", () => {
   const setupTitles: Record<string, RegExp> = {
     accessibility: /Allow Accessibility Access/,
-    "developer-tools": /Install Command Line Tools/,
     error: /Could Not Start/,
   };
-  for (const kind of ["checking", "accessibility", "developer-tools", "error"]) {
+  for (const kind of ["checking", "accessibility", "error"]) {
     const enabled: boolean[] = [];
     const snapshot = {
       windows: [{ id: 1, pid: 42, app: "Cached App", title: "Cached Window", space: 1, "has-ax-reference": true }],

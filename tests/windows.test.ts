@@ -1,4 +1,3 @@
-import * as nativeCatalog from "../src/native-helper-catalog";
 import type { MockValue, MockModules } from "./load-ts.ts";
 import { renderer, findAll, type TestNode } from "./render-ui.ts";
 import assert from "node:assert/strict";
@@ -7,17 +6,24 @@ import createLoader from "./load-ts.ts";
 
 function modules(extra: MockModules = {}) {
   const load = createLoader({
-    "../native-helper-catalog": { ...nativeCatalog, nativeHelperSourceHash: () => "v1" },
+    "swift:../../swift/app-hopper-native": { helperExecutablePath: async () => "/mock/native-package" },
     "../helpers/browser-helper": {
       runBrowserHelper: (...args) => load("src/helpers/native-helper.ts").runNativeHelper(...args),
     },
     "@raycast/api": { environment: { supportPath: "/mock" } },
+    ...extra,
     "node:child_process": {
-      execFile: () => {
-        throw new Error("Unexpected system operation");
+      ...extra["node:child_process"],
+      execFile: (binary, rpcArgs, options, callback) => {
+        const operation = extra["node:child_process"]?.execFile;
+        if (typeof operation !== "function") throw new Error("Unexpected system operation");
+        if (binary === "/mock/native-package") {
+          assert.equal(rpcArgs[0], "runHelper");
+          return operation(`${JSON.parse(rpcArgs[1])}-v1`, JSON.parse(rpcArgs[2]), options, callback);
+        }
+        return operation(binary, rpcArgs, options, callback);
       },
     },
-    ...extra,
   });
   return load;
 }

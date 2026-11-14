@@ -1,4 +1,3 @@
-import * as nativeCatalog from "../src/native-helper-catalog";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
@@ -75,7 +74,7 @@ test("extensionless Firefox adapter matches Chromium single-window and multi-win
     },
   ];
   const load = createLoader({
-    "../native-helper-catalog": { ...nativeCatalog, nativeHelperSourceHash: () => "v1" },
+    "swift:../../swift/app-hopper-native": { helperExecutablePath: async () => "/mock/native-package" },
     "../helpers/browser-helper": {
       runBrowserHelper: (...args) => load("src/helpers/native-helper.ts").runNativeHelper(...args),
     },
@@ -89,7 +88,10 @@ test("extensionless Firefox adapter matches Chromium single-window and multi-win
       rename: async () => {},
     },
     "node:child_process": {
-      execFile: (bin, args, _options, callback) => {
+      execFile: (_binary, rpcArgs, _options, callback) => {
+        assert.equal(rpcArgs[0], "runHelper");
+        const bin = `${JSON.parse(rpcArgs[1])}-v1`;
+        const args = JSON.parse(rpcArgs[2]);
         calls.push([bin, args]);
         if (bin.endsWith("macos-windows-v1") && args[0] === "list") {
           callback(

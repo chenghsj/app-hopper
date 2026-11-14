@@ -71,6 +71,12 @@ The original no-op-press regression failed before this fallback and passed after
 
 ## Runtime behavior
 
+### Swift package migration, 2026-11-14
+
+Native helpers now come from `swift/app-hopper-native/` using `extensions-swift-tools` 1.1.0. Raycast compiles the executable during its own build; committed binaries, source-hash binary selection and runtime compilation were removed. Browser helpers retain separate processes and queues, including when they use the same package executable. Firefox/Zen setup creates a text launcher for the Store-built executable and keeps the signed companion protocol and 1.0.1 pin unchanged. Existing integrations can use **Repair Local Helper** to update their registered launch path.
+
+The migrated package passed real Firefox and Zen native messaging tests through installed text launchers, including executable paths with spaces, apostrophes and a dollar sign, split message frames, live URLs, exact tab requests, malformed requests, EOF and shutdown cleanup. Startup with an empty support directory and compiler commands disabled also passed. All 231 regressions, complete TypeScript checks and Raycast lint passed. The distribution build produced both arm64 and x86_64 slices and passed its generated entry-point check. Live Raycast checks passed Edge and Safari tab selection and exact Code window focus without false failure. Firefox's local helper was repaired and the existing companion 1.0.1 reconnected through the new launcher. Zen's launcher was repaired and companion tab selection still worked; a live Zen restart/reconnection through the new launcher remains unverified. Earlier acceptance below describes the previous helper packaging; Store/downloaded-install acceptance for the new package remains separate.
+
 ### Store submission candidate, 2026-11-14
 
 The current distribution build passed all 209 regression tests, typecheck, lint, and verification of six universal native helpers. In Raycast, refreshing and searching a unique fragment found a background Chrome tab. **Switch to Tab** selected that exact tab and URL, and the command returned to Raycast's root. The temporary tab was closed and the original selected tab restored afterward. This verifies the local distribution build; Store review and downloaded-install acceptance remain separate.
@@ -89,9 +95,9 @@ A read-only local comparison changed only helper queue sharing against the same 
 
 - Each command launch checks setup again. A previous successful permission check is not cached as authorization for a later launch.
 - Missing Accessibility access opens a concise setup screen. Window discovery stays disabled until the user grants access and rechecks.
-- Packaged helpers are selected by the hash of their Swift sources and verified against the bundled binary checksum. Corrupt packages show a recovery screen rather than silently compiling replacement code.
-- A development checkout may compile missing helpers when developer tools are installed. An unprepared checkout without those tools shows the installation command; App Hopper never installs tools automatically.
-- The Firefox native host is copied into its per-user directory from the bundled helper when available. The optional companion still requires Mozilla signing and its own configured download.
+- Raycast builds native code from the pinned Swift package. Runtime discovers that generated executable through its exported Swift interface; a missing package shows the recovery screen.
+- Developers compile the package with Xcode through `ray build` or `ray develop`. Installed extensions never invoke a compiler or install developer tools.
+- The Firefox/Zen native host is registered through a per-user text launcher for the Raycast-built executable. The optional companion still requires Mozilla signing and its own configured download.
 - Unknown Space values remain hidden. Space discovery and some AX window discovery use private macOS APIs, so compatibility must be checked after macOS/browser updates. Full-screen windows and multiple displays require explicit acceptance checks.
 - All browsers display the reported tab title verbatim, including any pin, group, or memory-usage text supplied by the browser. App Hopper adds no pin or group accessories. Search and focus retain the same original title.
 
@@ -105,6 +111,6 @@ Use a clean user account or another Mac; do not copy this developer account's pe
 4. Verify single-window app Space labels, multi-window app omission, per-window/tab labels, and unknown Spaces across multiple displays and full-screen windows.
 5. Install a supported browser outside `/Applications` and verify its icons, navigation, and exact tab focus.
 6. Repeat on each claimed macOS version and on both Intel and Apple Silicon hardware. Rosetta execution alone is not Intel hardware acceptance.
-7. Verify the helpers included in the actual Store download and confirm their execution under the system's normal trust policy. Store submission checks source hashes, checksums, both architectures, and code signatures; it does not establish Gatekeeper acceptance. If distributing a separate Developer ID-signed archive, complete its notarization and downloaded-artifact acceptance independently.
+7. Verify the helpers included in the actual Store download and confirm their execution under the system's normal trust policy. The Store build compiles the submitted Swift package; local checks verify its entry point and architectures, while downloaded Gatekeeper acceptance remains separate. If distributing a separate Developer ID-signed archive, complete its notarization and downloaded-artifact acceptance independently.
 
 Reference: [Apple's notarization workflow](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).

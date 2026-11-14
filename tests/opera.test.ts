@@ -36,7 +36,7 @@ test("Opera enrichment searches background URLs and focuses the exact tab withou
   const load = createLoader({
     "../windows": { queryWindows: async () => windows },
     "../helpers/browser-helper": {
-      runBrowserHelper: async (name, _directory, args) => {
+      runBrowserHelper: async (name, args) => {
         calls.push({ name, args });
         if (args[0] === "focus") return "ok";
         return JSON.stringify(args[1] === "Opera" ? operaWindows : []);

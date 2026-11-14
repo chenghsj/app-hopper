@@ -15,7 +15,7 @@ test("browser helper preserves one native session, serializes requests, and reje
   });
   const load = createLoader({
     "./applescript": { OSA_TIMEOUT_MS: 1000 },
-    "./native-helper": { ensureNativeHelper: async () => "/fixture/browser-helper" },
+    "swift:../../swift/app-hopper-native": { helperExecutablePath: async () => "/fixture/browser-helper" },
     "node:child_process": {
       spawn: () => {
         const child = spawn(process.execPath, ["--import", "tsx", fixture]);
@@ -25,7 +25,7 @@ test("browser helper preserves one native session, serializes requests, and reje
     },
   });
   const { runBrowserHelper } = load("src/helpers/browser-helper.ts");
-  const request = (args: string[]) => runBrowserHelper("test", "/fixture", args);
+  const request = (args: string[]) => runBrowserHelper("test", args);
   const identity = "10:ax:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
   await assert.rejects(request(["focus", "Browser", "10", identity]), /expired/);
   assert.equal(children.length, 0);
@@ -33,13 +33,16 @@ test("browser helper preserves one native session, serializes requests, and reje
   assert.equal(JSON.parse(first).count, 1);
   assert.equal(JSON.parse(second).count, 2);
   assert.equal(children.length, 1);
+  const separateEngine = await runBrowserHelper("another-engine", ["list", "Browser"]);
+  assert.equal(JSON.parse(separateEngine).count, 1, "One package binary must retain separate engine sessions");
+  assert.equal(children.length, 2);
   await assert.rejects(request(["fail", "Browser"]), /Tab changed/);
   assert.equal(JSON.parse(await request(["focus", "Browser", "10", identity])).count, 3);
   await assert.rejects(request(["exit", "Browser"]), /session ended/);
   await assert.rejects(request(["focus", "Browser", "10", identity]), /expired/);
-  assert.equal(children.length, 1);
-  assert.equal(JSON.parse(await request(["list", "Browser"])).count, 1);
   assert.equal(children.length, 2);
+  assert.equal(JSON.parse(await request(["list", "Browser"])).count, 1);
+  assert.equal(children.length, 3);
 });
 
 test("a slow browser neither delays another browser nor expires its retained tab session", async (t) => {
@@ -47,7 +50,7 @@ test("a slow browser neither delays another browser nor expires its retained tab
   t.after(() => children.forEach((child) => child.kill()));
   const { runBrowserHelper } = createLoader({
     "./applescript": { OSA_TIMEOUT_MS: 50 },
-    "./native-helper": { ensureNativeHelper: async () => "/fixture/browser-helper" },
+    "swift:../../swift/app-hopper-native": { helperExecutablePath: async () => "/fixture/browser-helper" },
     "node:child_process": {
       spawn: () => {
         const child: MockValue = new EventEmitter();
@@ -66,10 +69,10 @@ test("a slow browser neither delays another browser nor expires its retained tab
       },
     },
   })("src/helpers/browser-helper.ts");
-  const slow = runBrowserHelper("engine", "/fixture", ["list", "Slow"]).catch((error: Error) => error.message);
-  const fast = await runBrowserHelper("engine", "/fixture", ["list", "Fast"]);
+  const slow = runBrowserHelper("engine", ["list", "Slow"]).catch((error: Error) => error.message);
+  const fast = await runBrowserHelper("engine", ["list", "Fast"]);
   assert.equal(JSON.parse(fast).args[1], "Fast");
   assert.match(await slow, /timed out/);
-  await runBrowserHelper("engine", "/fixture", ["focus", "Fast", "10", "10:ax:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"]);
+  await runBrowserHelper("engine", ["focus", "Fast", "10", "10:ax:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"]);
   assert.equal(children.length, 2, "the fast browser keeps its own helper after the slow browser times out");
 });

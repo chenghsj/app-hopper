@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["scripts/**/*.ts", "tests/**/*.ts", "eslint.config.ts"],
+  "include": ["scripts/**/*.ts", "tests/**/*.ts", "eslint.config.ts", "raycast-env.d.ts"],
   "compilerOptions": {
     "module": "preserve",
     "moduleResolution": "bundler",

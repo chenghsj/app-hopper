@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { prepareStore } from "../scripts/store-package.ts";
 
-test("Store export preserves current source and executable helpers while excluding agent and local files", (t) => {
+test("Store export preserves current source and its Swift package while excluding agent and local files", (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "app-hopper-store-export-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   function write(file: string, content: string, mode = 0o644) {
@@ -17,9 +17,10 @@ test("Store export preserves current source and executable helpers while excludi
   write(".prettierrc", "{}");
   write("tsconfig.json", "{}");
   write("eslint.config.ts", "export default [];");
-  write("scripts/build-native.ts", "// Native build");
-  write("scripts/native-helpers.ts", "// Native source/hash verification");
-  write("scripts/verify-native.ts", "// Verify prepared native helpers");
+  write("swift/app-hopper-native/Package.swift", "// Swift package");
+  write("swift/app-hopper-native/Package.resolved", "{}");
+  write("swift/app-hopper-native/Sources/helper.swift", "// Reviewable native source");
+  write("assets/compiled_raycast_swift/app-hopper-native", "Generated binary");
   write("docs/native-helpers.md", "[Setup](firefox-integration.md#user-setup) [Usage](../README.md)");
   const manifest = {
     name: "store-fixture",
@@ -27,9 +28,6 @@ test("Store export preserves current source and executable helpers while excludi
     license: "MIT",
     devDependencies: { "web-ext": "1.0.0", "@types/firefox-webext-browser": "1.0.0" },
     scripts: {
-      "build:native": "node --import tsx scripts/build-native.ts",
-      "verify:native": "node --import tsx scripts/verify-native.ts",
-      prebuild: "npm run build:native",
       build: "ray build",
       typecheck: "tsc --noEmit && tsc --noEmit -p tsconfig.companion.json",
       test: "node --import tsx --test tests/*.test.ts",
@@ -82,12 +80,14 @@ test("Store export preserves current source and executable helpers while excludi
     "[User setup](https://github.com/chenghsj/app-hopper/blob/main/docs/firefox-integration.md#user-setup) [MIT](https://github.com/chenghsj/app-hopper/blob/main/LICENSE)",
   );
   assert.equal(
-    readFileSync(path.join(destination, "docs/native-helpers.md"), "utf8"),
-    "[Setup](https://github.com/chenghsj/app-hopper/blob/main/docs/firefox-integration.md#user-setup) [Usage](../README.md)",
+    readFileSync(path.join(destination, "swift/app-hopper-native/Sources/helper.swift"), "utf8"),
+    "// Reviewable native source",
   );
-  assert.equal(statSync(path.join(destination, "assets/native/helper")).mode & 0o777, 0o755);
   for (const file of [
     "AGENTS.md",
+    "assets/native/helper",
+    "assets/compiled_raycast_swift",
+    "docs/native-helpers.md",
     "src/AGENTS.md",
     ".github",
     ".git",
@@ -108,7 +108,7 @@ test("Store export preserves current source and executable helpers while excludi
   }
   const exported = JSON.parse(readFileSync(path.join(destination, "package.json"), "utf8"));
   assert.equal(exported.scripts.build, "ray build");
-  assert.equal(exported.scripts.prebuild, "npm run build:native");
+  assert.equal(exported.scripts.prebuild, undefined);
   assert.equal(exported.scripts.typecheck, "tsc --noEmit");
   assert.equal(exported.scripts.publish, "npx @raycast/api@latest publish");
   assert.equal(exported.scripts.test, undefined);
@@ -126,7 +126,7 @@ test("Store export preserves current source and executable helpers while excludi
   assert.equal(readFileSync(path.join(root, "package.json"), "utf8"), sourceManifest);
   assert.equal(readFileSync(path.join(root, "package-lock.json"), "utf8"), sourceLock);
   assert.equal(readFileSync(path.join(root, "AGENTS.md"), "utf8"), "Keep in source only");
-  execFileSync("git", ["rm", "--cached", "scripts/build-native.ts"], { cwd: root });
-  assert.throws(() => prepareStore(root), /Missing tracked Store file: scripts\/build-native.ts/);
+  execFileSync("git", ["rm", "--cached", "swift/app-hopper-native/Package.swift"], { cwd: root });
+  assert.throws(() => prepareStore(root), /Missing tracked Store file: swift\/app-hopper-native\/Package.swift/);
   assert(existsSync(path.join(destination, "src/app-hopper.tsx")), "Failed exports must preserve the last candidate");
 });

@@ -5,32 +5,19 @@ import path from "node:path";
 import os from "node:os";
 import createLoader from "./load-ts.ts";
 
-test("Firefox setup installs per-user files atomically, repairs them, and reuses the compiled helper", async (t) => {
+test("Firefox setup installs text launchers atomically and repairs changed or missing files", async (t) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "ah-setup-"));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
-  let compiles = 0;
   const load = createLoader({
     "node:os": { homedir: () => home },
-    "../helpers/native-helper": {
-      resolveNativeHelper: () => ({
-        sourceHash: "0123456789ab",
-        sourcePaths: [path.resolve("assets/firefox-bridge.swift")],
-      }),
-    },
-    "../helpers/applescript": {
-      getRaycastPaths: () => ({ assetsPath: path.resolve("assets") }),
-      execBinary: async (binary, args) => {
-        assert.equal(binary, "/usr/bin/swiftc");
-        compiles++;
-        await fs.writeFile(args.at(-1), "test executable");
-      },
+    "swift:../../swift/app-hopper-native": {
+      helperExecutablePath: async () => "/built/native package's executable",
     },
   });
   const integration = load("src/browsers/firefox-integration.ts");
   assert.equal(await integration.isFirefoxHostInstalled(), false);
   assert.equal(await integration.hasFirefoxHostRegistration(), false);
   await Promise.all([integration.installFirefoxHost(), integration.installFirefoxHost()]);
-  assert.equal(compiles, 1);
   assert.equal(await integration.isFirefoxHostInstalled(), true);
   assert.equal(await integration.hasFirefoxHostRegistration(), true);
   const manifestPath = path.join(
@@ -41,6 +28,14 @@ test("Firefox setup installs per-user files atomically, repairs them, and reuses
   assert.equal(manifest.type, "stdio");
   assert.deepEqual(manifest.allowed_extensions, ["app-hopper-firefox@chenghsj"]);
   assert.equal(path.isAbsolute(manifest.path), true);
+  const launcher = await fs.readFile(manifest.path, "utf8");
+  assert.match(launcher, /^#!\/bin\/sh\nexec /);
+  assert(launcher.includes("'\\''"), "Apostrophes in the compiled path must be shell-escaped");
+  assert(launcher.includes("runHelper"));
+  await fs.writeFile(manifest.path, "damaged launcher");
+  assert.equal(await integration.isFirefoxHostInstalled(), false);
+  await integration.installFirefoxHost();
+  assert.equal(await fs.readFile(manifest.path, "utf8"), launcher);
   assert.equal((await fs.stat(manifestPath)).mode & 0o777, 0o600);
   assert.equal((await fs.stat(manifest.path)).mode & 0o777, 0o700);
   assert.equal((await fs.stat(integration.FIREFOX_DIRECTORY)).mode & 0o777, 0o700);
@@ -52,37 +47,32 @@ test("Firefox setup installs per-user files atomically, repairs them, and reuses
     "damaged registrations still need a repair entry point",
   );
   await integration.installFirefoxHost();
-  assert.equal(compiles, 1);
   assert.equal(await integration.isFirefoxHostInstalled(), true);
   await fs.rm(manifest.path);
   assert.equal(await integration.isFirefoxHostInstalled(), false);
   await integration.installFirefoxHost();
-  assert.equal(compiles, 2);
   assert.equal(await integration.isFirefoxHostInstalled(), true);
 });
 
-test("failed Firefox helper compilation leaves no manifest or temporary executable and can be retried", async (t) => {
+test("failed launcher writes leave no manifest or partial launcher and can be retried", async (t) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "ah-setup-"));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   let fail = true;
   const load = createLoader({
-    "node:os": { homedir: () => home },
-    "../helpers/native-helper": {
-      resolveNativeHelper: () => ({
-        sourceHash: "0123456789ab",
-        sourcePaths: [path.resolve("assets/firefox-bridge.swift")],
-      }),
-    },
-    "../helpers/applescript": {
-      getRaycastPaths: () => ({ assetsPath: path.resolve("assets") }),
-      execBinary: async (_binary, args) => {
-        await fs.writeFile(args.at(-1), "partial binary");
-        if (fail) throw new Error("Compiler unavailable");
+    "node:fs/promises": {
+      ...fs,
+      writeFile: async (file, data, options) => {
+        await fs.writeFile(file, data, options);
+        if (fail && String(file).endsWith(".tmp")) throw new Error("Write failed");
       },
+    },
+    "node:os": { homedir: () => home },
+    "swift:../../swift/app-hopper-native": {
+      helperExecutablePath: async () => "/built/native package's executable",
     },
   });
   const integration = load("src/browsers/firefox-integration.ts");
-  await assert.rejects(integration.installFirefoxHost(), /Compiler unavailable/);
+  await assert.rejects(integration.installFirefoxHost(), /Write failed/);
   assert.deepEqual(await fs.readdir(integration.FIREFOX_DIRECTORY), []);
   assert.equal(await integration.isFirefoxHostInstalled(), false);
   fail = false;
@@ -95,15 +85,8 @@ test("removing Firefox integration stops helpers after unregistering and preserv
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const load = createLoader({
     "node:os": { homedir: () => home },
-    "../helpers/native-helper": {
-      resolveNativeHelper: () => ({
-        sourceHash: "0123456789ab",
-        sourcePaths: [path.resolve("assets/firefox-bridge.swift")],
-      }),
-    },
-    "../helpers/applescript": {
-      getRaycastPaths: () => ({ assetsPath: path.resolve("assets") }),
-      execBinary: async (_bin, args) => fs.writeFile(args.at(-1), "test executable"),
+    "swift:../../swift/app-hopper-native": {
+      helperExecutablePath: async () => "/built/native package's executable",
     },
   });
   const integration = load("src/browsers/firefox-integration.ts");
@@ -143,15 +126,8 @@ test("Zen setup and removal keep Firefox manifests and helper files intact", asy
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const integration = createLoader({
     "node:os": { homedir: () => home },
-    "../helpers/native-helper": {
-      resolveNativeHelper: () => ({
-        sourceHash: "0123456789ab",
-        sourcePaths: [path.resolve("assets/firefox-bridge.swift")],
-      }),
-    },
-    "../helpers/applescript": {
-      getRaycastPaths: () => ({ assetsPath: path.resolve("assets") }),
-      execBinary: async (_binary, args) => fs.writeFile(args.at(-1), "compiled host"),
+    "swift:../../swift/app-hopper-native": {
+      helperExecutablePath: async () => "/built/native package's executable",
     },
   })("src/browsers/firefox-integration.ts");
   await Promise.all([integration.installFirefoxHost(), integration.installFirefoxHost("zen")]);

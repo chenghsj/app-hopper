@@ -22,7 +22,7 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
-      - name: Build native helpers and Raycast extension
+      - name: Build Swift package and Raycast extension
         run: |
           mkdir -p "$HOME/.config/raycast/extensions"
           npm run build

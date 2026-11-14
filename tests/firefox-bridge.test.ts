@@ -4,7 +4,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import vm from "node:vm";
-import { spawn, execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import createLoader from "./load-ts.ts";
 import ts from "typescript";
@@ -43,15 +43,26 @@ async function waitForSocket(child: ReturnType<typeof spawn>, directory: string)
 for (const id of ["firefox", "zen"]) {
   const browser = { id, appName: id === "zen" ? "Zen" : "Firefox", engine: "firefox" };
   test(`real native host and ${id} companion return live background URLs, focus exact tabs, and clean up`, async (t) => {
-    const directory = fs.mkdtempSync("/tmp/ah-bridge-");
-    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-    const binary = path.join(directory, "bridge");
-    execFileSync(
-      "/usr/bin/swiftc",
-      ["-module-cache-path", path.join(directory, "cache"), "-O", "assets/firefox-bridge.swift", "-o", binary],
-      { timeout: 60000 },
+    const home = fs.mkdtempSync("/tmp/ah-bridge-");
+    t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+    const builtBinary = path.resolve("assets/compiled_raycast_swift/app-hopper-native");
+    const executable = path.join(home, "native helper's $literal executable");
+    fs.symlinkSync(builtBinary, executable);
+    const integration = createLoader({
+      "node:os": { homedir: () => home },
+      "swift:../../swift/app-hopper-native": { helperExecutablePath: async () => executable },
+    })("src/browsers/firefox-integration.ts");
+    await integration.installFirefoxHost(id);
+    const manifest = JSON.parse(
+      fs.readFileSync(
+        path.join(home, `Library/Application Support/Mozilla/NativeMessagingHosts/app_hopper.${id}.json`),
+        "utf8",
+      ),
     );
-    const child = spawn(binary, ["--directory", directory]);
+    const directory = integration.geckoDirectory(id);
+    const binary = manifest.path;
+    const bridgeArgs = ["app-hopper-firefox@chenghsj"];
+    const child = spawn(binary, bridgeArgs);
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       stderr += chunk;
@@ -181,7 +192,7 @@ for (const id of ["firefox", "zen"]) {
     assert.equal(stderr, "");
     assert.equal(connections, 1);
 
-    const eof = spawn(binary, ["--directory", directory]);
+    const eof = spawn(binary, bridgeArgs);
     t.after(() => {
       if (eof.exitCode === null) eof.kill("SIGKILL");
     });
@@ -193,7 +204,7 @@ for (const id of ["firefox", "zen"]) {
     assert.equal(fs.existsSync(eofSocket), false);
 
     // Reject native frames before allocating an oversized message.
-    const malformed = spawn(binary, ["--directory", directory]);
+    const malformed = spawn(binary, bridgeArgs);
     t.after(() => {
       if (malformed.exitCode === null) malformed.kill("SIGKILL");
     });

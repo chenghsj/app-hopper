@@ -6,7 +6,7 @@ App Hopper is a macOS Raycast extension for finding and switching between runnin
 
 - `src/app-hopper.tsx` is the command entry point. `src/app-windows.tsx` and `src/browser-windows.tsx` contain the drill-down views.
 - `src/window-data.ts` loads window snapshots, `src/window-focus.ts` handles activation and focus, and `src/browsers/` holds the browser registry and adapters.
-- `assets/` contains the extension icon and Swift helpers for macOS window discovery and browser Accessibility integration. `tests/` contains the Node regression suite.
+- `swift/app-hopper-native/` contains the Swift package for macOS window discovery, browser Accessibility and native messaging. `assets/` contains runtime images and configuration. `tests/` contains the Node regression suite.
 
 ## Build and Development
 
@@ -22,6 +22,8 @@ Run these commands from the repository root:
 ## Coding Style
 
 Use strict TypeScript and follow the existing two-space indentation, double quotes, and semicolons. Prettier uses a 120-character print width. Use kebab-case file names, PascalCase for React components and types, and camelCase for functions and hooks such as `useWindowSearch`. Keep browser-specific behavior in its adapter and update the matching Swift helper and TypeScript adapter together when their command arguments or output change.
+
+Build native code through Raycast's Swift package integration. Commit Swift sources and `Package.resolved`; leave generated executables and build caches ignored. When changing helper entry points, preserve browser-session JSON lines and Firefox/Zen's framed native messaging protocol.
 
 ## Testing
 

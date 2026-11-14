@@ -1,47 +1,29 @@
-# Native helper provenance
+# Native helpers
 
-App Hopper submits Swift sources and their built executables together for Raycast review. There are no runtime native-code downloads. A Store user should not need Xcode or Command Line Tools.
+App Hopper uses Raycast's [extensions-swift-tools](https://github.com/raycast/extensions-swift-tools). The executable package is `swift/app-hopper-native/`; `ray build` and `ray develop` compile it and include the result automatically. The repository and Store submission contain Swift source and `Package.resolved`, with no committed native executables or runtime compilation. Store users need no developer tools.
 
-## Sources and outputs
+## Build and verify
 
-`assets/native-helpers.json` is the helper inventory. `assets/native/manifest.json` records the source hash and SHA-256 of each executable. All of these files, including the binaries, belong in the submission.
-
-| Helper           | Source                        | Purpose                                      |
-| ---------------- | ----------------------------- | -------------------------------------------- |
-| `runtime-status` | `assets/runtime-status.swift` | Read Accessibility permission status.        |
-| `macos-windows`  | `assets/macos-windows.swift`  | Discover apps/windows and focus a window.    |
-| `chromium-ax`    | `assets/chromium-ax.swift`    | Discover and focus Chromium tabs.            |
-| `webkit-ax`      | `assets/webkit-ax.swift`      | Discover and focus WebKit tabs.              |
-| `firefox-ax`     | `assets/firefox-ax.swift`     | Accessibility fallback for Firefox/Zen tabs. |
-| `firefox-bridge` | `assets/firefox-bridge.swift` | Firefox/Zen native messaging host.           |
-
-The three browser AX helpers also compile `assets/browser-tab-references.swift`, `assets/browser-helper-runtime.swift`, and `assets/browser-accessibility.swift`. The window helper and the three browser AX helpers also compile `assets/window-focus.swift`, which owns window restoration, application activation, window raising, and verification of the frontmost process and exact focused window. Their source hashes include all shared files. The Accessibility source owns common attribute access and window discovery; each browser keeps its own scan limits and enhanced-UI policy.
-
-## Rebuild and verify
-
-On macOS with Xcode or Command Line Tools:
+Developers need Xcode 16.3 or later and Node.js 24:
 
 ```sh
 npm ci
-npm run build:native
+npm run build
 npm run verify:native
+npm test
 ```
 
-`scripts/build-native.ts` compiles each helper with `/usr/bin/swiftc -O` for `arm64` and `x86_64`, targeting macOS 13.0, combines the slices with `lipo`, and signs the universal binary. Default signing is ad-hoc; no personal certificate or signing service is used. Existing verified outputs are reused, so remove the generated helper snapshot in a disposable checkout to force a full rebuild.
+Raycast generates `assets/compiled_raycast_swift/app-hopper-native` and its TypeScript interface. Generated binaries, Xcode data and Swift package caches are ignored by Git. `verify:native` checks the actual generated entry point and architecture list. Signing and downloaded-install trust remain part of Raycast distribution acceptance. `verify:store` checks tracked Swift sources and listing assets and rejects committed executables.
 
-`scripts/native-helpers.ts` verifies source hashes, binary checksums, both architecture slices, and strict code-signature validity. In the [source repository](https://github.com/chenghsj/app-hopper), `npm run verify:store` also checks listing files, screenshot dimensions, and that the submitted sources and outputs are tracked by Git. It does not establish reproducibility across different Xcode versions, Developer ID certification, notarization, or Store approval.
+## Entry points and lifecycle
 
-At runtime, the extension verifies a bundled binary's checksum and selects it using the current Swift source hash. A corrupt binary produces a recovery error. The source repository's [artifact tests](../tests/native-artifact.test.ts) exercise startup with compiler commands disabled and a fresh support directory.
+`helper-entry.swift` exposes `helperExecutablePath` and `runHelper` through `@raycast`. The TypeScript Swift import activates Raycast's build integration; workers invoke the generated entry point with JSON-encoded arguments. Each native operation runs on the main actor so AppKit activation updates can be delivered through the run loop.
 
-## Process behavior
+- `runtime-status` reads Accessibility permission without requesting it.
+- `MacOSWindowsHelper` discovers apps/windows and focuses exact native identities.
+- `ChromiumHelper`, `WebKitHelper`, and `FirefoxHelper` keep their engine-specific traversal and focus policies. Each browser owns a separate process and serialized JSON-line queue. Retained AX tab references live for that process; closing stdin terminates it. A slow browser cannot expire another browser's targets.
+- `FirefoxBridge` keeps the existing length-prefixed native messaging and per-session Unix socket protocols. Firefox or Zen owns the process. Installation writes a small, shell-escaped text launcher pointing to Raycast's generated executable. It neither copies a binary nor invokes a compiler. Moving the extension or changing its installed path requires **Repair Local Helper**.
 
-- Permission checks and window discovery run short-lived helpers.
-- Browser AX helpers use one process per browser with serialized JSON-line requests, preserving exact tab references. A slow browser cannot block or expire another browser's session. Closing stdin ends the session.
-- Firefox/Zen owns the native messaging host process. Its stdout is reserved for length-prefixed messages; tab requests travel through per-user Unix sockets. See [Firefox integration](firefox-integration.md).
-- No browsing history or session-restore files are read. Helpers exchange current tab data through local IPC. Raycast keeps the latest search snapshot, including window/tab titles and URLs, in its local Cache to populate the next launch. Refresh validates live targets; the helpers do not write browser session files.
+Shared discovery, tab-reference storage and exact-window focus remain canonical Swift sources in the same package. Browser matching, Space metadata and focus validation retain their existing behavior. The signed companion protocol and release pin are unchanged.
 
-## Review scope
-
-This preserves the existing CLI, browser-session, and native-messaging protocols. Converting the helpers to exported functions through Raycast's Swift macros would require a separate protocol/lifecycle migration. The current submission therefore includes reviewable source-built binaries and these reconstruction instructions, following Raycast's [binary dependency guidance](https://developers.raycast.com/basics/prepare-an-extension-for-store#binary-dependencies-and-additional-configuration). The Raycast team must review and accept this packaging approach.
-
-Downloaded-install acceptance, Intel hardware execution, Accessibility/Automation permissions, and browser workflows remain explicit checks in the [compatibility guide](compatibility.md).
+No browsing-history or session-restore database is read. Tab data travels through local IPC; Raycast's local cache retains the latest search snapshot. Downloaded-install acceptance, Intel hardware, permissions and browser workflows remain separate checks in the [compatibility guide](compatibility.md).

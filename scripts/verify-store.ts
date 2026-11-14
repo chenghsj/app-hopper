@@ -1,30 +1,24 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { config, directory, root, verifyHelper } from "./native-helpers.ts";
-import type { NativeManifest } from "./native-helpers.ts";
 import { verifyStoreMetadata } from "./store-metadata.ts";
 
-const manifest: NativeManifest = JSON.parse(readFileSync(path.join(directory, "manifest.json"), "utf8"));
-if (manifest.version !== 1 || manifest.minimumMacOS !== config.minimumMacOS) {
-  throw new Error("Invalid native helper manifest. Run npm run build:native.");
+const root = path.resolve(__dirname, "..");
+const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: root }).toString().split("\0").filter(Boolean);
+const required = [
+  ...verifyStoreMetadata(root),
+  "swift/app-hopper-native/Package.swift",
+  "swift/app-hopper-native/Package.resolved",
+  ...tracked.filter((file) => file.startsWith("swift/") && file.endsWith(".swift")),
+];
+execFileSync("git", ["ls-files", "--error-unmatch", "--", ...new Set(required)], { cwd: root, stdio: "pipe" });
+for (const file of tracked.filter((file) => file.startsWith("assets/"))) {
+  if (file.startsWith("assets/native/") || file.includes("compiled_raycast_swift/")) {
+    throw new Error(`Remove committed native build output: ${file}`);
+  }
+  const magic = readFileSync(path.join(root, file)).subarray(0, 4).toString("hex");
+  if (["cffaedfe", "feedfacf", "cafebabe", "bebafeca", "7f454c46"].includes(magic)) {
+    throw new Error(`Remove committed executable: ${file}`);
+  }
 }
-const files = ["assets/native/manifest.json", ...verifyStoreMetadata(root)];
-for (const helper of config.helpers) {
-  // Store review needs traceable, verified binaries. Developer ID remains an optional distribution mode.
-  verifyHelper(helper, manifest.helpers[helper.name]);
-  files.push(
-    `assets/native/${manifest.helpers[helper.name].file}`,
-    ...[helper.source, ...helper.additionalSources].map((source) => `assets/${source}`),
-  );
-}
-try {
-  execFileSync("git", ["ls-files", "--error-unmatch", "--", ...new Set(files)], {
-    cwd: root,
-    stdio: "pipe",
-  });
-} catch {
-  throw new Error("Store assets must be tracked in Git. Add the native helpers, screenshots, and listing files first.");
-}
-console.log(`Store submission verified: ${config.helpers.length} universal helpers (${manifest.signing}).`);
-console.log("Raycast review and downloaded-install acceptance are separate from these local checks.");
+console.log("Store sources verified: Swift package and screenshots are tracked; no native executables are committed.");

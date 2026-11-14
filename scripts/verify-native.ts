@@ -1,13 +1,10 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
-import { config, directory, verifyHelper } from "./native-helpers.ts";
-import type { NativeManifest } from "./native-helpers.ts";
 
-const manifest: NativeManifest = JSON.parse(readFileSync(path.join(directory, "manifest.json"), "utf8"));
-const release = process.argv.includes("--release");
-if (manifest.version !== 1 || manifest.minimumMacOS !== config.minimumMacOS)
-  throw new Error("Invalid native helper manifest");
-if (release && manifest.signing !== "developer-id")
-  throw new Error("Prepare Developer ID-signed helpers before publishing.");
-for (const helper of config.helpers) verifyHelper(helper, manifest.helpers[helper.name], release);
-console.log(`Verified ${config.helpers.length} universal helpers (${manifest.signing}).`);
+const binary = path.resolve(__dirname, "../assets/compiled_raycast_swift/app-hopper-native");
+if (!existsSync(binary)) throw new Error("Run npm run build to compile the Swift package first.");
+const result = execFileSync(binary, ["helperExecutablePath"], { encoding: "utf8", timeout: 5000 });
+if (JSON.parse(result) !== binary) throw new Error("The Swift package returned an unexpected executable path.");
+const architectures = execFileSync("/usr/bin/lipo", ["-archs", binary], { encoding: "utf8" }).trim();
+console.log(`Verified Raycast-built Swift package (${architectures}).`);

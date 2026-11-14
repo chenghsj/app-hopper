@@ -22,16 +22,17 @@ const packageFiles = new Set([
   "package-lock.json",
   "tsconfig.json",
   "eslint.config.ts",
-  "docs/native-helpers.md",
-  "scripts/build-native.ts",
-  "scripts/native-helpers.ts",
-  "scripts/verify-native.ts",
+  "swift/app-hopper-native/Package.swift",
+  "swift/app-hopper-native/Package.resolved",
 ]);
 
 function storeFile(file: string): boolean {
   const parts = file.split("/");
+  if (file.startsWith("assets/native/")) return false;
   if (parts.some((part) => part.toUpperCase() === "AGENTS.MD")) return false;
-  return packageFiles.has(file) || ["src", "assets", "metadata"].includes(parts[0]);
+  if (parts.some((part) => [".build", ".raycast-swift-build", ".swiftpm", "compiled_raycast_swift"].includes(part)))
+    return false;
+  return packageFiles.has(file) || ["src", "assets", "metadata", "swift"].includes(parts[0]);
 }
 
 /** Retain local links to submitted files; link omitted guides to their canonical source. */
@@ -47,25 +48,15 @@ function prepareManifest(destination: string) {
   const file = path.join(destination, "package.json");
   const manifest = JSON.parse(readFileSync(file, "utf8"));
   const scripts: Record<string, string> = {};
-  for (const name of [
-    "build:native",
-    "verify:native",
-    "prebuild",
-    "build",
-    "predev",
-    "dev",
-    "lint",
-    "fix-lint",
-    "prepublishOnly",
-  ]) {
+  for (const name of ["build", "dev", "lint", "fix-lint", "prepublishOnly"]) {
     if (manifest.scripts?.[name]) scripts[name] = manifest.scripts[name];
   }
   scripts.typecheck = "tsc --noEmit";
   scripts.publish = "npx @raycast/api@latest publish";
   manifest.scripts = scripts;
-  const companionDependencies = ["web-ext", "@types/firefox-webext-browser"];
-  const pruneLock = companionDependencies.some((name) => name in (manifest.devDependencies ?? {}));
-  for (const name of companionDependencies) delete manifest.devDependencies?.[name];
+  const sourceDependencies = ["web-ext", "@types/firefox-webext-browser", "tsx"];
+  const pruneLock = sourceDependencies.some((name) => name in (manifest.devDependencies ?? {}));
+  for (const name of sourceDependencies) delete manifest.devDependencies?.[name];
   writeFileSync(file, JSON.stringify(manifest, null, 2) + "\n");
   if (pruneLock) {
     const cache = mkdtempSync(path.join(os.tmpdir(), "app-hopper-store-npm-"));
@@ -95,7 +86,7 @@ function prepareManifest(destination: string) {
   }
 }
 
-/** Export the runtime, its build tools and native provenance, leaving development/release tooling in source. */
+/** Export runtime sources and the Swift package; Store builds all native code with ray build. */
 export function prepareStore(root: string): string {
   const destination = path.join(root, "dist", "store");
   const files = execFileSync("git", ["ls-files", "-z", "--cached", "--deduplicate"], { cwd: root })

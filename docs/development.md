@@ -2,7 +2,7 @@
 
 ## Install from source
 
-Install [Raycast](https://www.raycast.com/), Node.js 24 or newer with npm, and Apple's Command Line Tools (`xcode-select --install`) or Xcode. Then run:
+Install [Raycast](https://www.raycast.com/), Node.js 24 or newer with npm, and Xcode 16.3 or later. Then run:
 
 ```sh
 git clone https://github.com/chenghsj/app-hopper.git
@@ -38,9 +38,7 @@ npm run verify:native
 
 Run `npm run preview:loading` to open a persistent loading-screen preview in Raycast. Confirm **Run** if asked, and press **Esc** to leave it.
 
-`npm run dev` and `npm run build` automatically prepare native helpers. They compile Apple Silicon and Intel slices, combine them into universal binaries, sign them for local use, and generate `assets/native/manifest.json`. Unchanged helpers are verified and reused.
-
-`assets/native/` is the helper snapshot included for Store review and distribution. Keep its binaries and manifest in Git so a Store build does not depend on npm lifecycle hooks or a compiler on the user's Mac. Edit Swift sources, run `npm run build:native`, and commit the updated snapshot together. See [native helper provenance](native-helpers.md).
+`npm run dev` and `npm run build` use Raycast's Swift integration to compile `swift/app-hopper-native/`. Commit the Swift package, its sources and `Package.resolved`; generated executables and build caches stay ignored. Runtime never invokes a compiler. See [native helpers](native-helpers.md).
 
 ### Review map
 
@@ -50,7 +48,7 @@ Run `npm run preview:loading` to open a persistent loading-screen preview in Ray
 - `browsers/snapshot.ts` pairs browser data with native identities, keys scans, and retains valid enrichment. `use-browser-snapshot.ts` owns navigation seeding and live refreshes; `browsers/client.ts` shares in-flight scans across callers.
 - `window-data.ts` owns the application search snapshot lifetime: cached startup, native-first publication, enrichment, cancellation, completed-cache commits, and confirmed-window removal. `use-window-search.ts` adapts that state to React and presents Raycast failures. `use-stable-results.ts` commits appended row positions after rendering.
 - `browsers/firefox-reconciliation.ts` owns pure companion/AX matching. The Firefox adapter owns IPC and discovery.
-- `assets/browser-accessibility.swift` owns shared browser window discovery. Browser entry points retain their engine policies and tab traversal.
+- `swift/app-hopper-native/Sources/browser-accessibility.swift` owns shared browser window discovery. Browser entry points retain their engine policies and tab traversal.
 
 ### Startup snapshots
 
@@ -90,25 +88,11 @@ npm run lint
 npm test
 ```
 
-Add the changed source, helpers, manifest, listing files, and screenshots to Git. Run `npm run prepare:store` to verify and export the current contents of tracked files to `dist/store/`. Check that directory before publishing. New files must be added to Git first.
+Add the changed TypeScript/Swift source, Swift dependency lockfile, listing files, and screenshots to Git. Run `npm run prepare:store` to verify and export the current contents of tracked files to `dist/store/`. Check that directory before publishing. New files must be added to Git first.
 
-The export contains the Raycast source, runtime assets, screenshots, build/lint configuration, native build/verification scripts, and native provenance guide. Companion sources, tests, release/signing tools, agent instructions, the per-extension license file, and other development documents remain in this source repository. Links to omitted guides point here. The exported manifest retains only working extension/build commands, and its lockfile is pruned offline to remove companion-only development dependencies without changing the source lockfile.
+The export contains the Raycast source, runtime assets, screenshots, build/lint configuration, the Swift package and its dependency lockfile. Companion sources, tests, release/signing tools, agent instructions, the per-extension license file, and other development documents remain in this source repository. Links to omitted guides point here. The exported manifest retains only working extension/build commands, and its lockfile is pruned offline to remove companion-only development dependencies without changing the source lockfile.
 
 When ready, commit the changes and run `npm run publish`. This prepares the directory again and runs the Raycast CLI from `dist/store/`, so the submitted files use the same exclusions. The CLI creates a PR for Raycast review; approval and a downloaded clean-install check remain separate from local verification. `prepare:store` alone does not publish or open a PR.
-
-### Optional Developer ID distribution
-
-For a separately Developer ID-signed package, use your own certificate:
-
-```sh
-APP_HOPPER_SIGNING_IDENTITY='Developer ID Application: Your Name (TEAMID)' npm run package:native
-npm run build -- --environment dist
-npm run verify:native -- --release
-```
-
-The build preserves an unchanged, verified Developer ID package. Changing helper sources requires signing a new package.
-
-`verify:native -- --release` additionally checks Developer ID signatures, hardened runtime, and secure timestamps. It does not perform notarization. See the [compatibility checklist](compatibility.md) before claiming notarized distribution or downloaded-artifact Gatekeeper acceptance.
 
 ## CI
 

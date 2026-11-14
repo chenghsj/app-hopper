@@ -12,7 +12,7 @@ This is a self-distributed XPI flow. A public Mozilla Add-ons listing is not req
 
 The shared Mozilla-signed XPI 1.0.1 is published in the [GitHub Release](https://github.com/chenghsj/app-hopper/releases/tag/companion-v1.0.1). `assets/companion-integration.json` pins its public download URL and SHA-256 for both Firefox and Zen. The unsigned build ZIP is for signing, not end-user installation.
 
-Packaged builds copy the bundled native host into the current user's helper directory, preserving its code signature. No compiler is needed on the user's Mac. A source checkout without prepared helpers can compile the reviewable Swift source using `/usr/bin/swiftc`; that development fallback requires Command Line Tools. The integration uses per-user locations, without administrator privileges, login items, launch agents, or a TCP listener.
+Setup writes a small text launcher in the current user's helper directory. It runs the native executable built by Raycast's Swift integration, preserving the companion protocol. No native binary is copied or compiled during setup. After moving the extension, choose **Repair Local Helper** to update its executable path. The integration uses per-user locations, without administrator privileges, login items, launch agents, or a TCP listener.
 
 ## Downloads
 

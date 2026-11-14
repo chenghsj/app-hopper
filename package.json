@@ -39,15 +39,11 @@
     "web-ext": "10.8.0"
   },
   "scripts": {
-    "build:native": "node --import tsx scripts/build-native.ts",
-    "package:native": "node --import tsx scripts/build-native.ts --release",
     "verify:native": "node --import tsx scripts/verify-native.ts",
-    "prebuild": "npm run build:native",
     "build": "ray build",
     "test": "node --import tsx --test tests/*.test.ts",
     "package:firefox": "node --import tsx scripts/package-companion.ts",
     "configure:firefox-release": "node --import tsx scripts/configure-companion-release.ts",
-    "predev": "npm run build:native",
     "dev": "ray develop",
     "preview:loading": "npm run build && node --import tsx scripts/preview-loading.ts",
     "fix-lint": "ray lint --fix",

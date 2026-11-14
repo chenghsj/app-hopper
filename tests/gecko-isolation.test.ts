@@ -5,16 +5,6 @@ import path from "node:path";
 import net from "node:net";
 import { once } from "node:events";
 import createLoader from "./load-ts.ts";
-import { readAsset, swiftFunction, runSwiftHarness } from "./swift-harness.ts";
-
-test("native hosts choose independent directories for Firefox and Zen", () => {
-  runSwiftHarness(`import Foundation
-    ${swiftFunction(readAsset("firefox-bridge.swift"), "defaultBridgeDirectory").split("\nlet directory:")[0]}
-    let home = URL(fileURLWithPath: "/test")
-    precondition(defaultBridgeDirectory(executable: "/bin/zen-bridge-123", home: home) == "/test/Library/Application Support/raycast-app-hopper-zen")
-    precondition(defaultBridgeDirectory(executable: "/bin/firefox-bridge-123", home: home) == "/test/Library/Application Support/raycast-yabai-firefox")
-  `);
-});
 
 test("Zen companions expose hidden-sidebar URLs, retain unconnected profiles and focus only their browser session", async (t) => {
   const root = await fs.mkdtemp("/tmp/ah-gecko-");

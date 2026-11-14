@@ -18,7 +18,7 @@ for (const engine of ["chromium", "webkit"] as const) {
     const { getBrowserWindows, focusBrowserTab, getBrowserSummary } = createLoader({
       "../windows": { queryWindows: async () => native },
       "../helpers/browser-helper": {
-        runBrowserHelper: async (name, _directory, args) => {
+        runBrowserHelper: async (name, args) => {
           calls.push({ name, args });
           if (args[0] === "focus") return "";
           return JSON.stringify(
@@ -66,7 +66,7 @@ for (const engine of ["chromium", "webkit"] as const) {
     const { getBrowserWindows, focusBrowserTab } = createLoader({
       "../windows": { queryWindows: async () => [] },
       "../helpers/browser-helper": {
-        runBrowserHelper: async (_name, _directory, args) => {
+        runBrowserHelper: async (_name, args) => {
           if (args[0] === "focus") throw new Error("Tab list expired. Refresh the list.");
           return output;
         },
