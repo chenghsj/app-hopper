@@ -182,3 +182,24 @@ test("application search follows incoming app order until interaction and clears
   assert.equal(browsing.hasQuery, false);
   assert.deepEqual(titles(browsing), ["Notes"]);
 });
+
+test("changing arrangement during search keeps the query and applies grouping when cleared", () => {
+  const hook = searchHarness([app(1, "Safari", 2), app(2, "Notes", 1)]);
+  hook.render().listProps.onSearchTextChange("safari");
+  const searching = hook.render();
+  assert.deepEqual(titles(searching), ["Safari", "Safari window"]);
+  searching.arrangement.onChange("space");
+  const changed = hook.render();
+  assert.equal(changed.listProps.searchText, "safari");
+  assert.deepEqual(titles(changed), ["Safari", "Safari window"]);
+  assert.equal(hook.refreshes, 0);
+  changed.listProps.onSearchTextChange("");
+  const browsing = hook.render();
+  assert.equal(browsing.arrangement.value, "space");
+  assert.deepEqual(
+    browsing.groups.map((group) => group.title),
+    ["Space 1", "Space 2"],
+  );
+  assert.deepEqual(titles(browsing), ["Notes", "Safari"]);
+  assert.deepEqual(hook.saved, [{ key: "app-list-order", value: "space" }]);
+});

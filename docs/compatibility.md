@@ -71,11 +71,19 @@ The original no-op-press regression failed before this fallback and passed after
 
 ## Runtime behavior
 
+### Arrangement retention, 2026-11-15
+
+The native Raycast loop **Browsers & Apps → search firefox → clear** repeatedly reset to Recently Used. A saved default, native `storeValue` and a stable dropdown ID did not fix that loop. Keeping the existing controlled dropdown mounted during search fixes it without changing the arrangement cache, grouping, matching or ranking rules. The arrangement control now stays visible during search.
+
+Native checks passed search/clear for all four arrangements. Reopening App Hopper retained Name A–Z, By Space and Recently Used in the final build; the original Recently Used preference was restored. Regression coverage keeps the same arrangement control through matches, no matches, whitespace and clear, checks all four groupings, and verifies that changing the arrangement during search retains the query and applies the grouping after clear. The native dropdown reset itself requires Raycast acceptance; the mock renderer alone does not reproduce its initialization behavior.
+
+All 236 regressions, complete typechecks, Raycast lint, the distribution build and Store verification passed. The 70-file Store export differs only in `src/app-hopper.tsx` and builds independently with its unchanged lockfile.
+
 ### Search request management, 2026-11-15
 
 Root discovery now uses Raycast's `usePromise` for loading, errors, retry and cancellation. The snapshot store retains native-first updates, valid enrichment and completed-only cache writes. Aborted queries cannot publish, commit, or restore a confirmed closed window. Classification, matching, ranking and held result positions use the same modules as before.
 
-All 235 regressions, full typechecks, lint and the distribution build passed. Tests exercise the installed `usePromise`, including overlapping requests, late success/failure after cancellation, unmounts, retry, all four arrangements, progressive URL matches and retained selection. Native Raycast displayed the browser/app sections and app/tab search results; refreshing kept the search text and results. Clearing search reset the native arrangement dropdown to Recently Used in both the previous PR build (`69b8e089`) and this candidate. That existing dropdown-remount behavior remains a separate issue; the mock renderer does not reproduce it.
+All 235 regressions, full typechecks, lint and the distribution build passed. Tests exercise the installed `usePromise`, including overlapping requests, late success/failure after cancellation, unmounts, retry, all four arrangements, progressive URL matches and retained selection. Native Raycast displayed the browser/app sections and app/tab search results; refreshing kept the search text and results. Clearing search reset the native arrangement dropdown to Recently Used in both the previous PR build (`69b8e089`) and this candidate. The arrangement-retention follow-up above addresses that existing behavior.
 
 ### Store review follow-up, 2026-11-14
 

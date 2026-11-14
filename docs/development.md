@@ -56,6 +56,8 @@ Run `npm run preview:loading` to open a persistent loading-screen preview in Ray
 
 Selection or typing holds the current row positions and Space sections. Later matches append within their section, and held rows keep receiving current data by identity. A missing target stays in place as **No longer available**, with only **Refresh List** available. Changing the query, arrangement, or explicitly refreshing rebuilds the layout. AX result identities include the expected title and subrole because an AX index can be reused after closure; focus actions also retain their live target checks.
 
+The arrangement dropdown stays mounted during search. Removing it for a nonempty query and recreating it on clear lets the native dropdown's initial selection overwrite the cached arrangement. Keeping it visible preserves the selected arrangement and its saved preference. Changing it during search retains the query; its application grouping applies after the query is cleared.
+
 Only a completed load writes the persistent snapshot, once. Cancellation ignores later updates, and a failed refresh keeps the latest visible data without persisting its partial snapshot. Optional query failures retain available data and are logged independently.
 
 Removing a confirmed missing window invalidates the outstanding load before refreshing. Its late observations cannot restore the removed target. The cache removes that target from the last completed snapshot; a partial load never becomes the next launch's snapshot through this removal path.
