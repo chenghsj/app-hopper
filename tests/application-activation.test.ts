@@ -25,9 +25,10 @@ function activation(activateAfter?: number) {
   };
   const { activateRunningApplication } = createLoader({
     "./helpers/applescript": {
-      runAppleScript: async (script: string, language: string) => {
+      runAppleScript: async (script: string, args: string[], language: string) => {
         assert.equal(language, "JavaScript");
-        vm.runInNewContext(script, {
+        vm.runInNewContext(`${script}\nrun(scriptArguments);`, {
+          scriptArguments: args,
           ObjC: { import: (name: string) => assert.equal(name, "AppKit") },
           $: {
             NSRunningApplication: {

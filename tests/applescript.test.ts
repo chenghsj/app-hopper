@@ -13,11 +13,12 @@ test("official AppleScript runner retains JavaScript mode, timeout and caller ou
     },
     "node:child_process": { execFile: () => assert.fail("Use the shared Raycast AppleScript helper") },
   })("src/helpers/applescript.ts");
-  assert.equal(await runAppleScript("jxa", "JavaScript"), "  value\u001fitem\u001e");
+  const args = ['quoted " text', "line\nbreak", "雪\\path"];
+  assert.equal(await runAppleScript("jxa", args, "JavaScript"), "  value\u001fitem\u001e");
   assert.equal(await runAppleScript("apple"), "  value\u001fitem\u001e");
   assert.deepEqual(calls, [
-    ["jxa", { language: "JavaScript", timeout: 10000, humanReadableOutput: true }],
-    ["apple", { language: "AppleScript", timeout: 10000, humanReadableOutput: true }],
+    ["jxa", args, { language: "JavaScript", timeout: 10000, humanReadableOutput: true }],
+    ["apple", [], { language: "AppleScript", timeout: 10000, humanReadableOutput: true }],
   ]);
 });
 

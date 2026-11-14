@@ -71,6 +71,12 @@ The original no-op-press regression failed before this fallback and passed after
 
 ## Runtime behavior
 
+### Store review follow-up, 2026-11-14
+
+Window titles, subroles and process/index values now reach AppleScript/JXA through argument arrays. AX focus and discovery use fixed `on run argv` programs; fresh identity, ambiguity and closed-window checks remain in place. Regressions cover quotes, backslashes, Unicode and multiline window titles and compile both AX programs with macOS's AppleScript compiler. Complete validation passed 233 tests, typechecks, lint and the distribution build.
+
+Application, search-result, window and browser-tab actions now all have icons, retaining their existing order and shortcuts. The application action menu was checked in native Raycast. Browser-window lists retain their visible targets and show progress during seeded checks and refreshes; a deferred regression verifies both phases and the final updated rows. Live loading-bar timing was not captured before the Raycast panel was closed.
+
 ### Swift package migration, 2026-11-14
 
 Native helpers now come from `swift/app-hopper-native/` using `extensions-swift-tools` 1.1.0. Raycast compiles the executable during its own build; committed binaries, source-hash binary selection and runtime compilation were removed. Browser helpers retain separate processes and queues, including when they use the same package executable. Firefox/Zen setup creates a text launcher for the Store-built executable and keeps the signed companion protocol and 1.0.1 pin unchanged. Existing integrations can use **Repair Local Helper** to update their registered launch path.

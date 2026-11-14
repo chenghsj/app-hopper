@@ -4,6 +4,58 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { renderer, findAll } from "./render-ui.ts";
 
+test("browser windows retain visible targets and show progress during seeded checks and refresh", async () => {
+  const browser = { id: "chrome", appName: "Google Chrome", engine: "chromium" };
+  let data = [
+    { id: "10", title: "First", tabs: [{ id: "one", title: "One", url: "" }] },
+    { id: "11", title: "Second", tabs: [{ id: "two", title: "Two", url: "" }] },
+  ];
+  let isLoading = true;
+  let complete!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    complete = resolve;
+  });
+  const view = renderer(
+    {},
+    {
+      "./use-browser-snapshot": {
+        useBrowserSnapshot: () => ({
+          data,
+          isLoading,
+          revalidate: async () => {
+            isLoading = true;
+            await pending;
+            data = data.map((window) => ({ ...window, title: `${window.title} updated` }));
+            isLoading = false;
+          },
+        }),
+      },
+    },
+    "src/browser-windows.tsx",
+    "BrowserWindowsView",
+    { browser },
+  );
+  const rows = () => findAll(view.render(), (node) => node.type === view.ui.List.Item);
+  assert.equal(view.render().props.isLoading, true, "Seeded results must not hide an ongoing check");
+  const ids = rows().map((row) => row.props.id);
+  isLoading = false;
+  const refresh = findAll(rows()[0], (node) => node.props.title === "Refresh List")[0];
+  const work = refresh.props.onAction();
+  assert.equal(view.render().props.isLoading, true);
+  assert.deepEqual(
+    rows().map((row) => row.props.id),
+    ids,
+    "Refresh keeps exact visible targets",
+  );
+  complete();
+  await work;
+  assert.equal(view.render().props.isLoading, false);
+  assert.deepEqual(
+    rows().map((row) => row.props.title),
+    ["First updated", "Second updated"],
+  );
+});
+
 test("nested tabs refresh only the selected window, focus fresh targets, and can recover from empty and error states", async () => {
   const browser = { id: "chrome", appName: "Google Chrome", appPath: "/Chrome.app", engine: "chromium" };
   const original = { id: "10", title: "Old title", tabs: [{ id: "old", title: "Closed tab", url: "" }] };
