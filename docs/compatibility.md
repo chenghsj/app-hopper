@@ -71,6 +71,12 @@ The original no-op-press regression failed before this fallback and passed after
 
 ## Runtime behavior
 
+### Search request management, 2026-11-15
+
+Root discovery now uses Raycast's `usePromise` for loading, errors, retry and cancellation. The snapshot store retains native-first updates, valid enrichment and completed-only cache writes. Aborted queries cannot publish, commit, or restore a confirmed closed window. Classification, matching, ranking and held result positions use the same modules as before.
+
+All 235 regressions, full typechecks, lint and the distribution build passed. Tests exercise the installed `usePromise`, including overlapping requests, late success/failure after cancellation, unmounts, retry, all four arrangements, progressive URL matches and retained selection. Native Raycast displayed the browser/app sections and app/tab search results; refreshing kept the search text and results. Clearing search reset the native arrangement dropdown to Recently Used in both the previous PR build (`69b8e089`) and this candidate. That existing dropdown-remount behavior remains a separate issue; the mock renderer does not reproduce it.
+
 ### Store review follow-up, 2026-11-14
 
 Window titles, subroles and process/index values now reach AppleScript/JXA through argument arrays. AX focus and discovery use fixed `on run argv` programs; fresh identity, ambiguity and closed-window checks remain in place. Regressions cover quotes, backslashes, Unicode and multiline window titles and compile both AX programs with macOS's AppleScript compiler. Complete validation passed 233 tests, typechecks, lint and the distribution build.

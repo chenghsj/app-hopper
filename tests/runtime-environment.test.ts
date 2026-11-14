@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import createLoader from "./load-ts.ts";
 import { renderer, findAll } from "./render-ui.ts";
+import { windowSearchHarness } from "./window-search-harness.ts";
 
 function environment(
   overrides: Partial<{
@@ -124,29 +125,18 @@ test("window discovery and actions stay disabled until setup is ready", () => {
   }
   let loads = 0;
   for (const enabled of [false, true]) {
-    const data = { windows: [] };
-    const effects: (() => void)[] = [];
-    const load = createLoader({
-      "@raycast/api": {},
-      "@raycast/utils": {},
-      react: {
-        useState: (value) => [typeof value === "function" ? value() : value, () => {}],
-        useEffect: (fn) => effects.push(fn),
-        useSyncExternalStore: (_subscribe, get) => get(),
-      },
+    const hook = windowSearchHarness({
       "./window-data": {
         createWindowSearch: () => ({
-          getSnapshot: () => ({ data, isLoading: false }),
+          getSnapshot: () => ({ windows: [] }),
           subscribe() {},
-          cancel() {},
-          refresh: async () => {
+          load: async () => {
             loads++;
           },
         }),
       },
     });
-    load("src/use-window-search.ts").useWindowSearch(enabled);
-    effects.forEach((effect) => effect());
+    hook.render(enabled);
     assert.equal(loads, enabled ? 1 : 0);
   }
 });

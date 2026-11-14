@@ -46,7 +46,7 @@ Run `npm run preview:loading` to open a persistent loading-screen preview in Ray
 - `app-list-item.tsx` and `search-result-item.tsx` render those targets. `window-actions.tsx` owns focus, missing-target recovery, and refresh actions.
 - `app-window-evidence.ts` owns source coverage, browser navigation evidence, mixed native/AX search targets, and incomplete Space observations. Rows, arrangements and search retain their own presentation and ranking rules.
 - `browsers/snapshot.ts` pairs browser data with native identities, keys scans, and retains valid enrichment. `use-browser-snapshot.ts` owns navigation seeding and live refreshes; `browsers/client.ts` shares in-flight scans across callers.
-- `window-data.ts` owns the application search snapshot lifetime: cached startup, native-first publication, enrichment, cancellation, completed-cache commits, and confirmed-window removal. `use-window-search.ts` adapts that state to React and presents Raycast failures. `use-stable-results.ts` commits appended row positions after rendering.
+- `window-data.ts` owns cached startup, native-first publication, enrichment, completed-cache commits, and confirmed-window removal. `use-window-search.ts` uses Raycast's `usePromise` for loading, errors, retry, and request cancellation; the snapshot store checks its abort signal before publishing or committing. `use-stable-results.ts` commits appended row positions after rendering.
 - `browsers/firefox-reconciliation.ts` owns pure companion/AX matching. The Firefox adapter owns IPC and discovery.
 - `swift/app-hopper-native/Sources/browser-accessibility.swift` owns shared browser window discovery. Browser entry points retain their engine policies and tab traversal.
 

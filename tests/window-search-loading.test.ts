@@ -3,6 +3,7 @@ import test from "node:test";
 import type { MockValue } from "./load-ts.ts";
 import createLoader from "./load-ts.ts";
 import { renderer, findAll } from "./render-ui.ts";
+import { windowSearchHarness } from "./window-search-harness.ts";
 
 const { emptyWindowData, createWindowSearch } = createLoader({})("src/window-data.ts");
 const native = { id: 10, pid: 20, app: "Firefox", title: "Current", "has-ax-reference": true };
@@ -21,7 +22,7 @@ function deferred<T>() {
 
 function fixture(queries: Record<string, MockValue> = {}, cached?: MockValue) {
   const writes: MockValue[] = [];
-  const search = createWindowSearch({
+  const store = createWindowSearch({
     queries: {
       queryWindows: async () => [native],
       getRunningApplicationMetadata: async () => ({}),
@@ -37,9 +38,41 @@ function fixture(queries: Record<string, MockValue> = {}, cached?: MockValue) {
       set: (_key: string, value: string) => writes.push(JSON.parse(value)),
     },
   });
+  let loading: Promise<void>;
+  const toasts: MockValue[] = [];
+  const hook = windowSearchHarness({
+    "@raycast/api": { showToast: async (toast: MockValue) => toasts.push(toast) },
+    "./window-data": {
+      createWindowSearch: () => ({
+        ...store,
+        load: (signal: AbortSignal) => (loading = store.load(signal)),
+      }),
+    },
+  });
+  let started = false;
+  let enabled = true;
+  const read = () => hook.render(enabled, started);
+  const search = {
+    getSnapshot() {
+      const { isLoading, error } = read();
+      return { data: store.getSnapshot(), isLoading, error };
+    },
+    refresh() {
+      if (started) return read().refreshWindows();
+      started = true;
+      hook.flushEffects();
+      return loading.then(tick, tick);
+    },
+    cancel() {
+      enabled = false;
+      read();
+    },
+    removeWindow: (target: MockValue) => read().removeWindow(target),
+  };
+  read();
   const updates: MockValue[] = [];
-  const unsubscribe = search.subscribe(() => updates.push(search.getSnapshot()));
-  return { search, writes, updates, unsubscribe };
+  const unsubscribe = store.subscribe(() => updates.push(store.getSnapshot()));
+  return { search, writes, updates, unsubscribe, hook, toasts };
 }
 
 test("cold and cached searches publish native windows before tabs, then commit exactly once", async () => {
@@ -142,7 +175,7 @@ for (const stage of ["native", "enrichment"]) {
     const count = updates.length;
     pending.resolve(stage === "native" ? [native] : tabs);
     await loading;
-    assert.equal(search.getSnapshot(), cancelled);
+    assert.deepEqual(search.getSnapshot(), cancelled);
     assert.equal(updates.length, count);
     assert.equal(cancelled.isLoading, false);
     assert.deepEqual(writes, []);
@@ -171,7 +204,7 @@ test("a failed refresh keeps the completed snapshot and clears its error when re
     cached,
   );
   await search.refresh();
-  assert.equal(search.getSnapshot().error, failure);
+  assert.equal(search.getSnapshot().error, failure.message);
   assert.deepEqual(search.getSnapshot().data, cached);
   assert.equal(search.getSnapshot().isLoading, false);
   assert.deepEqual(writes, []);
@@ -320,54 +353,107 @@ test("corrupt or unavailable caches do not prevent a completed live search", asy
         },
       },
     });
-    await search.refresh();
-    assert.deepEqual(search.getSnapshot().data.windows, []);
-    assert.equal(search.getSnapshot().error, undefined);
-    assert.equal(search.getSnapshot().isLoading, false);
+    await search.load(new AbortController().signal);
+    assert.deepEqual(search.getSnapshot().windows, []);
   }
 });
 
 test("the React adapter renders cold failures and wires retry to the real search lifetime", async () => {
   const failure = new Error("Accessibility query failed");
   let fail = true;
-  const { search } = fixture({
+  const { search, hook, toasts } = fixture({
     queryWindows: async () => {
       if (fail) throw failure;
       return [];
     },
   });
-  const toasts: MockValue[] = [];
-  const effects: (() => void)[] = [];
-  let previousError: unknown;
-  const load = createLoader({
-    "@raycast/api": {},
-    "@raycast/utils": { showFailureToast: async (error: unknown) => toasts.push(error) },
-    "./window-data": { createWindowSearch: () => search },
-    react: {
-      useState: () => [search],
-      useSyncExternalStore: (_subscribe: MockValue, get: () => MockValue) => get(),
-      useEffect: (effect: () => void, dependencies: MockValue[]) => {
-        if (dependencies.length === 2) effects.push(effect);
-        else if (dependencies[0] !== previousError) {
-          previousError = dependencies[0];
-          effect();
-        }
-      },
-    },
-  });
-  const hook = () => load("src/use-window-search.ts").useWindowSearch();
-  hook();
-  effects[0]();
+  await search.refresh();
   await tick();
-  const view = renderer(emptyWindowData(), { "./use-window-search": { useWindowSearch: hook } });
+  const view = renderer(emptyWindowData(), { "./use-window-search": { useWindowSearch: () => hook.render() } });
   const empty = () => findAll(view.render(), (node) => node.type === view.ui.List.EmptyView)[0];
   assert.equal(empty().props.title, "Failed to Load Applications");
   assert.equal(empty().props.description, failure.message);
-  assert.deepEqual(toasts, [failure]);
+  assert.equal(toasts.length, 1);
+  assert.equal(toasts[0].title, "Failed to fetch windows");
+  assert.equal(toasts[0].message, failure.message);
   fail = false;
   await findAll(empty(), (node) => node.props.title === "Refresh List")[0].props.onAction();
   await tick();
   assert.equal(empty().props.title, "No Running Applications");
+});
+
+test("Raycast request state preserves arrangements and URL search as progressive tabs arrive", async () => {
+  const firefox = { ...native, localizedName: "Firefox", space: 2 };
+  const notes = { id: 30, pid: 40, app: "Notes", localizedName: "Notes", title: "Notes window", space: 1 };
+  const expected = {
+    recent: { titles: ["Notes", "Firefox"], sections: [] },
+    name: { titles: ["Firefox", "Notes"], sections: [] },
+    type: { titles: ["Firefox", "Notes"], sections: ["Browsers", "Applications"] },
+    space: { titles: ["Notes", "Firefox"], sections: ["Space 1", "Space 2"] },
+  };
+  for (const [arrangement, result] of Object.entries(expected)) {
+    const browser = deferred<MockValue[]>();
+    const { search, hook } = fixture({
+      queryWindows: async () => [firefox, notes],
+      getApplicationOrder: async () => [40, 20],
+      getBrowserWindows: () => browser.promise,
+    });
+    const loading = search.refresh();
+    await tick();
+    const view = renderer(emptyWindowData(), {
+      "./use-window-search": { useWindowSearch: () => hook.render() },
+    });
+    view.render().props.searchBarAccessory.props.onChange(arrangement);
+    const rows = () => findAll(view.render(), (node) => node.type === view.ui.List.Item);
+    assert.deepEqual(
+      rows().map((row) => row.props.title),
+      result.titles,
+    );
+    assert.deepEqual(
+      findAll(view.render(), (node) => node.type === view.ui.List.Section).map((section) => section.props.title),
+      result.sections,
+    );
+    view.render().props.onSearchTextChange("docs.example.com");
+    assert.deepEqual(rows(), []);
+    browser.resolve([
+      { id: "10", title: "Current", tabs: [{ id: "tab:1", title: "Reference", url: "https://docs.example.com" }] },
+    ]);
+    await loading;
+    assert.deepEqual(
+      rows().map((row) => row.props.title),
+      ["Reference"],
+    );
+    const target = rows()[0].props.id;
+    view.render().props.onSelectionChange(target);
+    await hook.render().refreshWindows();
+    assert.equal(view.render().props.searchText, "docs.example.com");
+    assert.equal(view.render().props.selectedItemId, target);
+    assert.deepEqual(
+      rows().map((row) => row.props.id),
+      [target],
+    );
+    view.render().props.onSearchTextChange("");
+    assert.equal(view.render().props.searchBarAccessory.props.value, arrangement);
+    assert.deepEqual(
+      rows().map((row) => row.props.title),
+      result.titles,
+    );
+  }
+});
+
+test("unmounting cancels late results and failures without a toast or cache write", async () => {
+  for (const outcome of ["success", "failure"]) {
+    const pending = deferred<MockValue[]>();
+    const { search, hook, writes, toasts } = fixture({ queryWindows: () => pending.promise });
+    const loading = search.refresh();
+    hook.unmount();
+    if (outcome === "success") pending.resolve([native]);
+    else pending.reject(new Error("Obsolete native failure"));
+    await loading;
+    assert.deepEqual(writes, []);
+    assert.deepEqual(toasts, []);
+    assert.deepEqual(search.getSnapshot().data.windows, []);
+  }
 });
 
 test("empty search results show the loading state until pending data has arrived", () => {
