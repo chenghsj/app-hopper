@@ -14,8 +14,8 @@ For development, run `npm run build:zen`, prepare the local helper, then load `d
 
 - Shared add-on ID: `app-hopper-firefox@chenghsj`; native host: `app_hopper.zen`.
 - Native manifest: `~/Library/Application Support/Mozilla/NativeMessagingHosts/app_hopper.zen.json` (Zen's macOS build uses the Mozilla vendor).
-- Helper and sockets: `~/Library/Application Support/raycast-app-hopper-zen/`; the installed helper is named `zen-bridge-<source hash>`.
-- Firefox retains its existing host and directory; both browsers allow the same add-on ID. The shared native binary selects the Zen directory from its installed `zen-bridge-` executable name.
+- Launcher and sockets: `~/Library/Application Support/raycast-app-hopper-zen/`; the text launcher is named `zen-bridge-<launcher hash>` and runs Raycast's Swift-package executable.
+- Firefox retains its existing host and directory; both browsers allow the same add-on ID. The launcher passes the Zen directory explicitly to the shared executable's `firefox-bridge` entry point.
 - Each profile gets a random connection session. Window and tab IDs include that session; focus requests stay in the selected browser's socket directory. Repair/removal touches only that browser's files and helpers.
 - Unconnected profiles retain native/Accessibility windows. Ambiguous native/companion matches remain separate rather than discarding windows.
 
@@ -38,6 +38,8 @@ This configures the same download for Firefox and Zen. Then rebuild App Hopper. 
 The development companion was loaded through Zen's temporary add-on picker after preparing its helper from Raycast. On the installed Zen 1.24.1b, with Compact Mode's sidebar still hidden, the live adapter returned one window and three tabs, with URLs for all three and no duplicate unavailable-window row. Raycast showed **Connected — companion 1.0.0**, displayed the three tabs, matched `google.com`, and successfully activated the corresponding Google tab through the companion.
 
 That earlier smoke test validates the temporary-add-on path only. On 2026-11-13, the daily-use Zen 1.24.1b profile with the installed signed companion 1.0.1 also passed normal restart/reconnection, background-URL search, and cross-workspace activation in both directions through App Hopper. The installed XPI checksum matched the pinned release. See the [local acceptance record](compatibility.md#local-browser-acceptance-2026-11-13). Clean first-install confirmation, update, repair/removal, and private-window access remain separate checks.
+
+On 2026-11-15, the installed companion 1.0.1 automatically reconnected after its native host received a supported shutdown request. The new session used Raycast's generated Swift executable through the repaired text launcher. Live status/list requests passed, and all two windows/ten tabs retained the same URL set. This verifies native-host reconnection; a full Zen quit/relaunch with the new package remains separate. See the [generated-helper reconnect record](compatibility.md#zen-generated-helper-reconnect-2026-11-15).
 
 ## Local cross-workspace bridge
 
