@@ -39,7 +39,9 @@ The development companion was loaded through Zen's temporary add-on picker after
 
 That earlier smoke test validates the temporary-add-on path only. On 2026-11-13, the daily-use Zen 1.24.1b profile with the installed signed companion 1.0.1 also passed normal restart/reconnection, background-URL search, and cross-workspace activation in both directions through App Hopper. The installed XPI checksum matched the pinned release. See the [local acceptance record](compatibility.md#local-browser-acceptance-2026-11-13). Clean first-install confirmation, update, repair/removal, and private-window access remain separate checks.
 
-On 2026-11-15, the installed companion 1.0.1 automatically reconnected after its native host received a supported shutdown request. The new session used Raycast's generated Swift executable through the repaired text launcher. Live status/list requests passed, and all two windows/ten tabs retained the same URL set. This verifies native-host reconnection; a full Zen quit/relaunch with the new package remains separate. See the [generated-helper reconnect record](compatibility.md#zen-generated-helper-reconnect-2026-11-15).
+On 2026-11-15, the installed companion 1.0.1 automatically reconnected after its native host received a supported shutdown request. The new session used Raycast's generated Swift executable through the repaired text launcher. Live status/list requests passed, and the two windows/ten tabs retained the same URL set. See the [generated-helper reconnect record](compatibility.md#zen-generated-helper-reconnect-2026-11-15).
+
+Two subsequent normal quit/relaunch cycles also automatically reconnected companion 1.0.1 through the generated executable, each with two windows and ten tabs. The second preserved the exact URL set; the first had an unresolved URL-digest difference and is not treated as an unchanged-URL pass. See the [browser-restart record](compatibility.md#zen-browser-restart-2026-11-15) for the evidence and limits.
 
 ## Local cross-workspace bridge
 

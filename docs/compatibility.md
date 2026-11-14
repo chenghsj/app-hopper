@@ -71,11 +71,19 @@ The original no-op-press regression failed before this fallback and passed after
 
 ## Runtime behavior
 
+### Zen browser restart, 2026-11-15
+
+After Zen became available to the desktop tool, two normal **⌘Q → Quit Zen → relaunch** cycles were performed in the existing profile. The first cycle independently confirmed that the original browser and native-host processes had exited. Both launches created new browser/native-host processes and companion sessions, automatically connected companion 1.0.1 to the generated Swift executable, and answered live status/list requests with two windows and ten tabs.
+
+The first cycle returned the same window/tab counts but a different sorted URL digest. All returned URLs were nonempty; the original baseline retained only its digest, so the exact changed URL and cause remain unresolved. It is not counted as an unchanged-URL pass. The second cycle compared a fresh baseline with the restored session and retained the exact URL set, with zero added or removed URLs. Temporary plaintext URL data was removed from the acceptance record after comparison. Zen was returned to the original YouTube tab; no test tabs were added or closed and no browser preferences or companion version were changed.
+
+Automatic reconnection after a full browser restart is verified. URL restoration has one passing cycle and one unresolved difference; do not generalize the passing cycle into a claim that every restart preserves every URL.
+
 ### Zen generated-helper reconnect, 2026-11-15
 
 The installed signed companion 1.0.1 was connected through the repaired text launcher to Raycast's generated `app-hopper-native` executable. A supported `shutdown` request restarted only its native host; the running companion automatically created a new session and helper process through the same generated executable. Live `status` and `list` requests succeeded afterward. The two normal windows and ten tabs had an identical sorted URL set before and after reconnect; only counts and a digest were recorded, without browsing URLs or titles.
 
-This verifies the installed companion's automatic native-host reconnection through the new launcher. No companion update or profile change was needed. Native Zen/Raycast windows were unavailable to the desktop tool during this follow-up, so toolbar-triggered reconnection and a full browser quit/relaunch were not exercised here. Earlier browser-restart acceptance below used the previous helper packaging.
+This verifies the installed companion's automatic native-host reconnection through the new launcher. No companion update or profile change was needed. Native Zen/Raycast windows were unavailable to the desktop tool during this initial follow-up; the later full browser quit/relaunch results are recorded above. Toolbar-triggered reconnection was not exercised here. Earlier browser-restart acceptance below used the previous helper packaging.
 
 ### Arrangement retention, 2026-11-15
 
@@ -101,7 +109,7 @@ Application, search-result, window and browser-tab actions now all have icons, r
 
 Native helpers now come from `swift/app-hopper-native/` using `extensions-swift-tools` 1.1.0. Raycast compiles the executable during its own build; committed binaries, source-hash binary selection and runtime compilation were removed. Browser helpers retain separate processes and queues, including when they use the same package executable. Firefox/Zen setup creates a text launcher for the Store-built executable and keeps the signed companion protocol and 1.0.1 pin unchanged. Existing integrations can use **Repair Local Helper** to update their registered launch path.
 
-The migrated package passed real Firefox and Zen native messaging tests through installed text launchers, including executable paths with spaces, apostrophes and a dollar sign, split message frames, live URLs, exact tab requests, malformed requests, EOF and shutdown cleanup. Startup with an empty support directory and compiler commands disabled also passed. All 231 regressions, complete TypeScript checks and Raycast lint passed. The distribution build produced both arm64 and x86_64 slices and passed its generated entry-point check. Live Raycast checks passed Edge and Safari tab selection and exact Code window focus without false failure. Firefox's local helper was repaired and the existing companion 1.0.1 reconnected through the new launcher. Zen's launcher was repaired and companion tab selection still worked; the generated-helper reconnect follow-up above verifies its later automatic native-host reconnection. A full Zen quit/relaunch through the new launcher remains unverified. Earlier acceptance below describes the previous helper packaging; Store/downloaded-install acceptance for the new package remains separate.
+The migrated package passed real Firefox and Zen native messaging tests through installed text launchers, including executable paths with spaces, apostrophes and a dollar sign, split message frames, live URLs, exact tab requests, malformed requests, EOF and shutdown cleanup. Startup with an empty support directory and compiler commands disabled also passed. All 231 regressions, complete TypeScript checks and Raycast lint passed. The distribution build produced both arm64 and x86_64 slices and passed its generated entry-point check. Live Raycast checks passed Edge and Safari tab selection and exact Code window focus without false failure. Firefox's local helper was repaired and the existing companion 1.0.1 reconnected through the new launcher. Zen's launcher was repaired and companion tab selection still worked; the reconnect and browser-restart follow-ups above verify its later automatic reconnection through the new package, with the recorded URL-restoration limits. Earlier acceptance below describes the previous helper packaging; Store/downloaded-install acceptance for the new package remains separate.
 
 ### Store submission candidate, 2026-11-14
 
