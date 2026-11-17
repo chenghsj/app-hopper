@@ -5,6 +5,33 @@ import type { Window } from "../src/windows";
 import createLoader from "./load-ts.ts";
 
 for (const engine of ["chromium", "webkit"] as const) {
+  test(`${engine} focuses a known tab without waiting for unrelated application discovery`, async () => {
+    let release!: (windows: Window[]) => void;
+    const unrelatedDiscovery = new Promise<Window[]>((resolve) => {
+      release = resolve;
+    });
+    const calls: string[][] = [];
+    const { focusBrowserTab } = createLoader({
+      "../windows": { queryWindows: () => unrelatedDiscovery },
+      "../helpers/browser-helper": {
+        runBrowserHelper: async (_name, args) => {
+          calls.push(args);
+          return "ok";
+        },
+      },
+    })("src/browsers/client.ts");
+    const tab = { id: "10:ax:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", title: "Known tab", url: "" };
+    const focus = focusBrowserTab({ id: engine, appName: "Browser", engine }, { id: "10", tabs: [tab] }, tab);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    try {
+      assert.equal(calls.length, 1, "an unrelated app must not delay sending the exact tab to its browser helper");
+      assert.deepEqual(calls[0].slice(0, 5), ["focus", "Browser", "10", tab.id, tab.title]);
+    } finally {
+      release([]);
+      await focus;
+    }
+  });
+
   test(`${engine} list and focus share native targets while preserving the engine's window policy`, async () => {
     const browser: BrowserConfig = { id: engine, appName: "Browser", engine };
     const native = [
@@ -49,7 +76,7 @@ for (const engine of ["chromium", "webkit"] as const) {
     await focusBrowserTab(browser, target, target.tabs[1]);
     assert.deepEqual(calls.at(-1), {
       name: `${engine}-ax`,
-      args: ["focus", "Browser", "10", "10:ax:bbbbbbbb-cccc-dddd-eeee-ffffffffffff", "Same title", "20"],
+      args: ["focus", "Browser", "10", "10:ax:bbbbbbbb-cccc-dddd-eeee-ffffffffffff", "Same title"],
     });
     const before = calls.length;
     await assert.rejects(focusBrowserTab(browser, target, { ...target.tabs[0], id: "bad-target" }), /Invalid/);

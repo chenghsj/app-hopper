@@ -25,6 +25,7 @@ Review the shared rules first, then the browser adapters and their tests.
 - Opera uses the Chromium adapter with its own native policy: deeper tab-strip traversal for its extra AX application groups, and the `OpTb` scripting class for URL queries. Other Chromium browsers retain their existing traversal budget and `CrTb` class.
 - Vivaldi traverses its known internal `window.html` UI once with a deeper budget. Nested web content stays excluded. If AXPress does not select a tab, its `AXDOMIdentifier` supplies the exact scripting tab ID. Focus locates that ID in live per-window tab lists, sets the current active index, and verifies both the scripting active ID and AX selection. Scripting window IDs are independent of native window IDs and are queried by identity, not window order or title.
 - Native focus activates the app before raising its target window, then verifies the foreground PID and exact focused window ID. Firefox/Zen companion focus also activates its uniquely reconciled native window after selecting the browser tab.
+- Chromium/WebKit focus sends the known window and tab IDs directly to that browser's helper. The helper discovers and validates the live browser target without first waiting for a full snapshot of every application's windows.
 
 ## Compilation
 

@@ -75,7 +75,7 @@ test("mixed native and AX evidence preserves ordering and distinct process/subro
   const hits = searchApplications([app], "project", data.browserTabs, data.axWindowsByPid);
   assert.deepEqual(
     hits.filter((hit) => hit.kind === "window").map((hit) => hit.id),
-    ["window:3:10", "window:4:20", "window:3:11"],
+    ["window:3:10", "window:3:11", "window:4:20"],
   );
   assert.deepEqual(
     hits.filter((hit) => hit.kind === "ax-window").map((hit) => hit.id),

@@ -367,7 +367,7 @@ test("WebKit browsers (Safari and Orion) are registered and supported via webkit
         args[2] === "20400" &&
         args[3] === "20400:1" &&
         args[4] === "WebKit" &&
-        args[5] === "41234",
+        args.length === 5,
     ),
   );
 

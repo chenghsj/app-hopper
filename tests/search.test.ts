@@ -289,7 +289,7 @@ test("root search keeps same-named browser tabs alongside their app", () => {
   ]);
 });
 
-test("late app matches do not move selected content sections until the search changes", async () => {
+test("late app matches retain section order and the exact selected content target", async () => {
   const tab = { id: "10:ax:one", title: "Code docs", url: "https://example.com" };
   const data = {
     ...snapshot,
@@ -303,11 +303,12 @@ test("late app matches do not move selected content sections until the search ch
   data.windows.push(native(20, 2, "Code", "Editor"));
   const updated = view.render();
   assert.deepEqual(sections(view, updated), [
-    { title: "Tabs and Windows", rows: ["Code docs"] },
     { title: "Applications", rows: ["Code"] },
+    { title: "Tabs and Windows", rows: ["Code docs"] },
   ]);
   assert.equal(updated.props.selectedItemId, first.props.id);
-  await findAll(rows(view, updated)[0], (node) => node.props.title === "Switch to Tab")[0].props.onAction();
+  const selected = rows(view, updated).find((row) => row.props.id === first.props.id)!;
+  await findAll(selected, (node) => node.props.title === "Switch to Tab")[0].props.onAction();
   assert.equal(focused[0][2], tab);
   search(view, "code");
   assert.deepEqual(sections(view, view.render()), [
@@ -495,7 +496,7 @@ test("Firefox name search uses reconciled bridge IDs and keeps unmatched native 
     const hits = search(view, query);
     assert.deepEqual(
       hits.map((row) => row.props.title),
-      ["Firefox", "Firefox add-ons", "Runtime / this-firefox", "Mozilla Firefox"],
+      ["Firefox", "Firefox add-ons", "Mozilla Firefox", "Runtime / this-firefox"],
     );
     assert.equal(hits[0].props.subtitle, "2 windows");
     assert(push(view, hits[0], "Show Browser Tabs and Windows"));
@@ -551,7 +552,9 @@ test("tab hits only replace their own native window, retaining other unreadable 
         {},
       );
       assert.deepEqual(
-        hits.map((hit: MockValue) => [hit.kind, hit.window.id]),
+        hits
+          .map((hit: MockValue) => [hit.kind, hit.window.id])
+          .sort(([a]: string[], [b]: string[]) => a.localeCompare(b)),
         [
           ["tab", companion ? "session:1" : "10"],
           ["window", 11],
@@ -569,10 +572,7 @@ test("unmapped companion windows do not hide native windows by title or position
     { firefox: [{ id: "session:1", title: "Project", tabs: [{ id: "tab:1", title: "Project", url: "" }] }] },
     {},
   );
-  assert.deepEqual(
-    hits.map((hit: MockValue) => hit.kind),
-    ["tab", "window"],
-  );
+  assert.deepEqual(hits.map((hit: MockValue) => hit.kind).sort(), ["tab", "window"]);
 });
 
 test("a reconciled companion window keeps Show Tabs navigation when only the native title matches", () => {
@@ -655,12 +655,170 @@ test("AX fallback deduplication respects process and window subrole", () => {
     },
   );
   assert.deepEqual(
-    hits.map((hit: MockValue) => hit.id),
-    ["window:3:20", 'ax:3:[2,"Project","AXDialog"]', 'ax:4:[1,"Project","AXStandardWindow"]'],
+    hits.map((hit: MockValue) => hit.id).sort(),
+    ["window:3:20", 'ax:3:[2,"Project","AXDialog"]', 'ax:4:[1,"Project","AXStandardWindow"]'].sort(),
   );
 });
 
-test("typing holds existing result positions while new browser matches arrive and preserves exact targets", async () => {
+test("search ranking survives browser reference refreshes and app order changes while retaining selection", async () => {
+  const chromeTabs = ["z", "a"].map((name) => ({
+    id: `10:ax:cached-${name}`,
+    title: "Shortcut Override for Netflix",
+    url: `chrome-extension://${name}/options.html`,
+  }));
+  const firefoxTab = { id: "20:stable", title: chromeTabs[0].title, url: "moz-extension://shortcut/options.html" };
+  const data = {
+    ...snapshot,
+    windows: [
+      native(10, 1, "Google Chrome", "Work"),
+      native(20, 2, "Firefox", "Work"),
+      native(30, 3, "Code", "package.json — netflix-shortcut-override"),
+    ],
+    applicationOrder: [1, 2, 3],
+    browserTabs: {
+      chrome: [{ id: "10", title: "Work", tabs: chromeTabs }],
+      firefox: [{ id: "20", title: "Work", tabs: [firefoxTab] }],
+    },
+  };
+  const focused: MockValue[][] = [];
+  const view = renderer(data, { "./browsers/client": { focusBrowserTab: async (...args) => focused.push(args) } });
+  const labels = (tree: TestNode) =>
+    rows(view, tree).map((row) =>
+      row.props.subtitle === "Code" ? "Code" : `${row.props.accessories[0].text}: ${row.props.subtitle.value}`,
+    );
+  const expected = [
+    `Firefox: ${firefoxTab.url}`,
+    `Google Chrome: ${chromeTabs[1].url}`,
+    `Google Chrome: ${chromeTabs[0].url}`,
+    "Code",
+  ];
+  const hits = search(view, "shortcut");
+  const selected = hits.find((row) => row.props.subtitle === "Code")!;
+  view.render().props.onSelectionChange(selected.props.id);
+  assert.deepEqual(labels(view.render()), expected);
+
+  const live = chromeTabs.map((tab, index) => ({ ...tab, id: `10:ax:live-${index}` }));
+  data.browserTabs.chrome[0].tabs = live;
+  data.applicationOrder = [3, 2, 1];
+  let updated = view.render();
+  assert.deepEqual(labels(updated), expected, "refreshed Chrome targets must return to their ranked positions");
+  assert.equal(updated.props.selectedItemId, selected.props.id);
+
+  const target = rows(view, updated).find((row) => row.props.subtitle.value === live[1].url)!;
+  const selectedLiveTab = live[1];
+  updated.props.onSelectionChange(target.props.id);
+  data.browserTabs.chrome[0].tabs.reverse();
+  data.applicationOrder.reverse();
+  updated = view.render();
+  assert.deepEqual(labels(updated), expected, "equal scores must not follow incoming app or tab order");
+  assert.equal(updated.props.selectedItemId, target.props.id);
+  const selectedTab = rows(view, updated).find((row) => row.props.id === target.props.id)!;
+  await findAll(selectedTab, (node) => node.props.title === "Switch to Tab")[0].props.onAction();
+  assert.equal(focused[0][2], selectedLiveTab, "selection must retain the exact live tab when rows reorder");
+
+  search(view, "shortcut ");
+  assert.deepEqual(labels(view.render()), expected, "retyping the same terms must produce the same order");
+  data.browserTabs.chrome = [];
+  assert.deepEqual(labels(view.render()), [expected[0], "Code"]);
+  data.browserTabs.chrome = [{ id: "10", title: "Work", tabs: live }];
+  assert.deepEqual(labels(view.render()), expected, "late browser results must join their ranked positions");
+});
+
+test("late higher-scoring tabs sort ahead of URL matches without retargeting the selected row", async () => {
+  const original = { id: "10:ax:original", title: "Reference", url: "https://github.com/one" };
+  const fresh = { id: "10:ax:fresh", title: "GitHub docs", url: "https://example.com" };
+  const data = {
+    ...snapshot,
+    windows: [native(10, 1, "Safari", "Work")],
+    browserTabs: { safari: [{ id: "10", title: "Work", tabs: [original] }] },
+  };
+  const focused: MockValue[][] = [];
+  const view = renderer(data, { "./browsers/client": { focusBrowserTab: async (...args) => focused.push(args) } });
+  const [selected] = search(view, "github");
+  view.render().props.onSelectionChange(selected.props.id);
+  data.browserTabs.safari[0].tabs = [original, fresh];
+  const updated = view.render();
+  assert.deepEqual(
+    rows(view, updated).map((row) => row.props.title),
+    ["GitHub docs", "Reference"],
+  );
+  assert.equal(updated.props.selectedItemId, selected.props.id);
+  const target = rows(view, updated).find((row) => row.props.id === selected.props.id)!;
+  await findAll(target, (node) => node.props.title === "Switch to Tab")[0].props.onAction();
+  assert.equal(focused[0][2], original);
+  const renamed = { ...original, title: "GitHub" };
+  data.browserTabs.safari[0].tabs = [fresh, renamed];
+  const rescored = view.render();
+  assert.deepEqual(
+    rows(view, rescored).map((row) => row.props.title),
+    ["GitHub", "GitHub docs"],
+  );
+  assert.equal(rescored.props.selectedItemId, selected.props.id);
+  const liveTarget = rows(view, rescored).find((row) => row.props.id === selected.props.id)!;
+  await findAll(liveTarget, (node) => node.props.title === "Switch to Tab")[0].props.onAction();
+  assert.equal(focused[1][2], renamed, "retained identities must use current scores and current action metadata");
+});
+
+test("live tab references replace vanished unselected search rows without duplicate unavailable results", async () => {
+  const cached = { id: "10:ax:cached", title: "Shortcut Override for Netflix", url: "chrome-extension://shortcut" };
+  const data = {
+    ...snapshot,
+    windows: [native(10, 1, "Google Chrome", cached.title)],
+    browserTabs: { chrome: [{ id: "10", title: cached.title, tabs: [cached] }] },
+  };
+  const focused: MockValue[][] = [];
+  const view = renderer(data, { "./browsers/client": { focusBrowserTab: async (...args) => focused.push(args) } });
+  assert.equal(search(view, "short").length, 1);
+
+  const live = { ...cached, id: "10:ax:live" };
+  data.browserTabs.chrome[0].tabs = [live];
+  const hits = rows(view, view.render());
+  assert.equal(hits.length, 1, "a vanished cache reference must not remain beside the current tab");
+  assert.notEqual(hits[0].props.subtitle, "No longer available");
+  await findAll(hits[0], (node) => node.props.title === "Switch to Tab")[0].props.onAction();
+  assert.equal(focused[0][2], live, "the remaining action must use the exact live reference");
+});
+
+test("only the selected missing target stays unavailable until selection moves to a live result", async () => {
+  const cached = ["one", "two", "three"].map((id) => ({
+    id: `10:ax:cached-${id}`,
+    title: "Shortcut Override for Netflix",
+    url: "chrome-extension://shortcut",
+  }));
+  const data = {
+    ...snapshot,
+    windows: [native(10, 1, "Google Chrome", cached[0].title)],
+    browserTabs: { chrome: [{ id: "10", title: cached[0].title, tabs: cached }] },
+  };
+  const focused: MockValue[][] = [];
+  const view = renderer(data, { "./browsers/client": { focusBrowserTab: async (...args) => focused.push(args) } });
+  const [selected] = search(view, "short");
+  view.render().props.onSelectionChange(selected.props.id);
+
+  const live = cached.map((tab, index) => ({ ...tab, id: `10:ax:live-${index}` }));
+  data.browserTabs.chrome[0].tabs = live;
+  const updated = view.render();
+  const hits = rows(view, updated);
+  assert.equal(hits.length, 4, "keep three distinct live tabs, even with identical titles and URLs");
+  assert.equal(updated.props.selectedItemId, selected.props.id);
+  assert.equal(hits[0].props.subtitle, "No longer available");
+  assert.equal(findAll(hits[0], (node) => node.props.title === "Switch to Tab").length, 0);
+
+  updated.props.onSelectionChange(hits[1].props.id);
+  const moved = view.render();
+  const current = rows(view, moved);
+  assert.equal(moved.props.selectedItemId, hits[1].props.id);
+  assert.equal(current.length, 3);
+  assert(current.every((row) => row.props.subtitle !== "No longer available"));
+  await findAll(current[0], (node) => node.props.title === "Switch to Tab")[0].props.onAction();
+  assert.equal(focused[0][2], live[0]);
+
+  data.browserTabs.chrome[0].tabs = [live[0]];
+  assert.equal(rows(view, view.render()).length, 1, "later updates also remove unselected closed tabs");
+  assert.equal(rows(view, view.render()).length, 1, "removed rows must not return on the next render");
+});
+
+test("typing keeps results ranked while new browser matches arrive and preserves exact selected targets", async () => {
   const original = { id: "10:ax:one", title: "Reference", url: "https://github.com/one" };
   const fresh = { id: "10:ax:two", title: "GitHub docs", url: "https://example.com" };
   const data = {
@@ -676,23 +834,24 @@ test("typing holds existing result positions while new browser matches arrive an
   const updated = view.render();
   assert.deepEqual(
     rows(view, updated).map((row) => row.props.title),
-    ["Reference", "GitHub docs"],
+    ["GitHub docs", "Reference"],
   );
   assert.equal(updated.props.selectedItemId, first.props.id);
   const later = { id: "10:ax:three", title: "GitHub", url: "https://example.org" };
   data.browserTabs.safari[0].tabs = [later, fresh, original];
   assert.deepEqual(
     rows(view, view.render()).map((row) => row.props.title),
-    ["Reference", "GitHub docs", "GitHub"],
-    "newly appended results also keep their positions through subsequent updates",
+    ["GitHub", "GitHub docs", "Reference"],
+    "late title matches must rank above the selected URL match",
   );
-  await findAll(rows(view, updated)[0], (node) => node.props.title === "Switch to Tab")[0].props.onAction();
+  const selected = rows(view, updated).find((row) => row.props.id === first.props.id)!;
+  await findAll(selected, (node) => node.props.title === "Switch to Tab")[0].props.onAction();
   assert.equal(focused[0][2].id, original.id);
   data.browserTabs.safari[0].tabs = [fresh];
   const missing = view.render();
-  assert.equal(rows(view, missing)[0].props.id, first.props.id);
-  assert.equal(rows(view, missing)[0].props.subtitle, "No longer available");
-  assert.equal(findAll(rows(view, missing)[0], (node) => node.props.title === "Switch to Tab").length, 0);
+  const unavailable = rows(view, missing).find((row) => row.props.id === first.props.id)!;
+  assert.equal(unavailable.props.subtitle, "No longer available");
+  assert.equal(findAll(unavailable, (node) => node.props.title === "Switch to Tab").length, 0);
   assert.deepEqual(
     search(view, "github docs").map((row) => row.props.title),
     ["GitHub docs"],
@@ -762,6 +921,15 @@ test("held tabs keep their action when their title stops matching but the tab st
   assert.equal(held.props.title, "Reference");
   await findAll(held, (node) => node.props.title === "Switch to Tab")[0].props.onAction();
   assert.equal(focused[0][2], latest);
+  const other = { id: "10:ax:other", title: "Project notes", url: "https://example.org" };
+  data.browserTabs.safari[0].tabs = [latest, other];
+  const updated = view.render();
+  const match = rows(view, updated).find((row) => row.props.title === other.title)!;
+  updated.props.onSelectionChange(match.props.id);
+  assert.deepEqual(
+    rows(view, view.render()).map((row) => row.props.title),
+    [other.title],
+  );
 });
 
 test("a reused AX index cannot silently retarget the selected search result", () => {
@@ -780,10 +948,11 @@ test("a reused AX index cannot silently retarget the selected search result", ()
   const targets = rows(view, updated);
   assert.deepEqual(
     targets.map((row) => row.props.title),
-    ["Project old", "Project new"],
+    ["Project new", "Project old"],
   );
-  assert.equal(targets[0].props.subtitle, "No longer available");
-  assert.equal(findAll(targets[0], (node) => node.props.title === "Focus Window").length, 0);
+  const unavailable = targets.find((row) => row.props.id === first.props.id)!;
+  assert.equal(unavailable.props.subtitle, "No longer available");
+  assert.equal(findAll(unavailable, (node) => node.props.title === "Focus Window").length, 0);
   assert.notEqual(targets[0].props.id, targets[1].props.id);
   assert.equal(updated.props.selectedItemId, first.props.id);
 });

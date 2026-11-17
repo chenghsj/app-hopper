@@ -202,7 +202,7 @@ test("root apps share one MRU list across browser, minimized, hidden, and window
   assert.equal(action(view, rows[0], "Activate Application").props.title, "Activate Application");
 });
 
-test("content search exposes focusable windows with MRU ordering for equal relevance", () => {
+test("content search exposes focusable windows with fixed app and title ordering for equal relevance", () => {
   const view = renderer(
     snapshot(
       [
@@ -217,7 +217,7 @@ test("content search exposes focusable windows with MRU ordering for equal relev
   const rows = items(view, view.render());
   assert.deepEqual(
     rows.map((row) => row.props.title),
-    ["Project source", "Project notes", "Project docs"],
+    ["Project notes", "Project source", "Project docs"],
   );
   assert.equal(rows[0].props.subtitle, "Editor");
   assert(action(view, rows[0], "Focus Window"));

@@ -96,27 +96,26 @@ test("application search owns typing, enrichment, live targets, disappearance an
   // Enrichment can arrive between typing and the next render, before a selection event.
   hook.options.data.browserTabs = { safari: [{ ...browserWindow, tabs: [fresh, original] }] };
   const enriched = hook.render();
-  assert.deepEqual(titles(enriched), ["Reference", "GitHub docs"]);
+  assert.deepEqual(titles(enriched), ["GitHub docs", "Reference"]);
   assert.equal(enriched.hasQuery, true);
   assert.equal(enriched.hasResults, true);
-  const selectedId = rows(enriched)[0].item.id;
+  const selectedId = rows(enriched).find((row) => row.item.kind === "tab" && row.item.tab.id === original.id)!.item.id;
   enriched.listProps.onSelectionChange(selectedId);
 
   const latest = { ...original, title: "Renamed reference", url: "https://example.org" };
   const later = { id: "10:ax:three", title: "GitHub", url: "https://example.net" };
   hook.options.data.browserTabs = { safari: [{ ...browserWindow, tabs: [later, fresh, latest] }] };
   const updated = hook.render();
-  assert.deepEqual(titles(updated), ["Renamed reference", "GitHub docs", "GitHub"]);
+  assert.deepEqual(titles(updated), ["GitHub", "GitHub docs", "Renamed reference"]);
   assert.equal(updated.listProps.selectedItemId, selectedId);
-  const target = rows(updated)[0].item;
+  const target = rows(updated).find((row) => row.item.id === selectedId)!.item;
   assert.equal(target.kind, "tab");
   if (target.kind !== "tab") assert.fail("expected the original tab target");
   assert.equal(target.tab, latest, "held rows use the exact live target even when it no longer matches the query");
 
   hook.options.data.browserTabs = { safari: [{ ...browserWindow, tabs: [later, fresh] }] };
   const missing = hook.render();
-  assert.equal(rows(missing)[0].unavailable, true);
-  assert.equal(rows(missing)[0].item.id, selectedId);
+  assert.equal(rows(missing).find((row) => row.item.id === selectedId)!.unavailable, true);
   assert.equal(missing.listProps.selectedItemId, selectedId);
   missing.refresh();
   const refreshed = hook.render();

@@ -279,7 +279,14 @@ test("Space sections follow refreshed data and omit empty sections", () => {
   assert.equal(findAll(empty, (node) => node.type === view.ui.List.EmptyView).length, 1);
 });
 
-test("search stays ranked by relevance and clearing it restores the selected arrangement", () => {
+test("search displays only Relevance and clearing it restores the selected arrangement", () => {
+  const selectedTitle = (view: ReturnType<typeof renderer>, tree: TestNode) => {
+    const dropdown = tree.props.searchBarAccessory;
+    return findAll(
+      dropdown,
+      (node) => node.type === view.ui.List.Dropdown.Item && node.props.value === dropdown.props.value,
+    )[0].props.title;
+  };
   for (const order of ["recent", "name", "type", "space"]) {
     const view = renderer(
       snapshot([native(1, "Safari", { title: "Project" }), native(2, "Alpha", { title: "Project notes" })], {
@@ -290,21 +297,32 @@ test("search stays ranked by relevance and clearing it restores the selected arr
     const browsing = view.render();
     const initialRows = rows(view, browsing);
     const initialSections = sections(view, browsing);
+    const initialTitle = selectedTitle(view, browsing);
     browsing.props.onSearchTextChange("project");
     const searching = view.render();
     assert.equal(searching.props.searchBarAccessory?.type, browsing.props.searchBarAccessory.type);
     assert.equal(searching.props.searchBarAccessory.props.value, order);
+    assert.equal(selectedTitle(view, searching), "Relevance");
+    assert.equal(searching.props.searchBarAccessory.props.onChange, undefined);
+    assert.equal(
+      findAll(searching.props.searchBarAccessory, (node) => node.type === view.ui.List.Dropdown.Item).length,
+      1,
+    );
     assert.deepEqual(sections(view, searching), [{ title: "Tabs and Windows", apps: ["Project", "Project notes"] }]);
     assert.deepEqual(rows(view, searching), ["Project", "Project notes"]);
     searching.props.onSearchTextChange("missing");
     const noMatches = view.render();
     assert.equal(rows(view, noMatches).length, 0);
     assert.equal(noMatches.props.searchBarAccessory.props.value, order);
+    assert.equal(selectedTitle(view, noMatches), "Relevance");
     noMatches.props.onSearchTextChange(" ");
     assert.equal(view.render().props.searchBarAccessory.props.value, order);
+    assert.equal(selectedTitle(view, view.render()), initialTitle);
     view.render().props.onSearchTextChange("");
     const restored = view.render();
     assert.equal(restored.props.searchBarAccessory.props.value, order);
+    assert.equal(selectedTitle(view, restored), initialTitle);
+    assert.equal(typeof restored.props.searchBarAccessory.props.onChange, "function");
     assert.deepEqual(rows(view, restored), initialRows);
     assert.deepEqual(sections(view, restored), initialSections);
   }

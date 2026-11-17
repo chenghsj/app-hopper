@@ -76,7 +76,7 @@ test("Opera enrichment searches background URLs and focuses the exact tab withou
   await client.focusBrowserTab(results[0].browser, results[0].window, results[0].tab);
   assert.deepEqual(calls.at(-1), {
     name: "chromium-ax",
-    args: ["focus", "Opera", "11", operaWindows[1].tabs[0].id, "Same page title", "20"],
+    args: ["focus", "Opera", "11", operaWindows[1].tabs[0].id, "Same page title"],
   });
 });
 

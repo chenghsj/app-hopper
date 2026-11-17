@@ -14,6 +14,20 @@
 
 Raycast's own system requirement also applies and can be newer than the helpers' deployment target. Do not advertise a minimum supported macOS version based solely on a compiler target.
 
+### Search ordering (2026-11-17)
+
+Root search now uses current relevance scores and fixed app/title/URL tie-breakers for both initial and progressively updated results. Replaced native tab references return to their ranked positions, and incoming app recency does not decide equal-score search order. The selected target follows its exact identity when its position changes; a selected missing target remains disabled until selection moves away. App browsing without a query still retains its arrangement and held Space sections.
+
+All 250 regressions, build, typecheck, and lint passed. Regressions cover reference replacement, reversed app/tab input order, late browser matches, late higher-scoring results, rescoring renamed targets, consistent section order, and exact selected actions after reordering. In the rebuilt local Raycast development extension, `shortcut` returned the same ordered five rows before and after switching to the Code window and reopening App Hopper, and again after Refresh List. No browser tabs were created or closed for this check.
+
+The search-label follow-up displays **Relevance** during a nonempty query and restores the saved app arrangement on clear. The dropdown remains mounted with its selection value preserved. All 44 related regressions, build, typecheck, and lint passed. Native Raycast checks passed **Recently Used**, **Name A–Z**, **Browsers & Apps**, and **By Space** → search → clear, with each original label and grouping restored. The original Recently Used preference was restored, and the final search displayed Relevance.
+
+### Native tab focus latency (2026-11-17)
+
+A local Chrome check measured 2,053 ms from the native adapter's focus entry to helper completion: 1,978 ms was spent refreshing every application's window snapshot, followed by 75 ms for the browser helper. Sending the same window/tab target directly to its browser helper reduced that path to 56 ms in the paired check. The helper still resolves the live browser window, checks the retained tab identity, and verifies the focused window. These measurements exclude Raycast input/rendering and are a single local comparison, not a benchmark across browsers or Space transitions.
+
+Both Chromium and WebKit now skip that global scan during focus. Deferred-query regressions for both engines fail before the change and pass afterward, proving an unrelated blocked window query no longer delays the focus request. All 248 regressions, build, typecheck, and lint passed. In the final rebuilt Raycast development extension, URL search and selection activated the exact Chrome options tab; the browser's selected-tab state and address bar confirmed the target. Temporary timing instrumentation was removed. Firefox/Zen adapters were not changed by this optimization.
+
 ### Local browser acceptance, 2026-11-13
 
 On macOS 27.2.1 (Apple Silicon), the working checkout based on `e6e2c2b`, including the uncommitted helper/browser refactors and single-command setup, was built and opened in Raycast. The current regression suite passed 153 tests; build, typecheck, lint, and `verify:store` passed. These results apply to this local working tree, not the committed Store preparation alone.
