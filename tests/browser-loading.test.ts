@@ -114,6 +114,42 @@ test("different native snapshots stay independent and failed queries can be retr
   assert.equal((await retry).length, 1);
 });
 
+test("shared browser scans stop only after their last consumer cancels and allow an immediate retry", async () => {
+  const scans: { signal: AbortSignal; pending: ReturnType<typeof deferred<MockValue[]>> }[] = [];
+  const { getBrowserWindows } = createLoader({
+    "./native": {
+      getNativeBrowserWindows: (_browser: MockValue, _windows: MockValue, signal: AbortSignal) => {
+        assert(signal, "The shared scan must own its cancellation signal");
+        const pending = deferred<MockValue[]>();
+        signal.addEventListener("abort", () => pending.reject(signal.reason), { once: true });
+        scans.push({ signal, pending });
+        return pending.promise;
+      },
+    },
+  })("src/browsers/client.ts");
+  const rootAbort = new AbortController();
+  const root = getBrowserWindows(browser, [native], rootAbort.signal);
+  const child = getBrowserWindows(browser, [native]);
+  const cancelled = assert.rejects(root, { name: "AbortError" });
+  rootAbort.abort();
+  await cancelled;
+  assert.equal(scans.length, 1);
+  assert.equal(scans[0].signal.aborted, false, "Navigation still needs the shared scan");
+  scans[0].pending.resolve(windows);
+  assert.equal((await child)[0].tabs, windows[0].tabs);
+
+  const lastAbort = new AbortController();
+  const obsolete = getBrowserWindows(browser, [native], lastAbort.signal);
+  const stopped = assert.rejects(obsolete, { name: "AbortError" });
+  lastAbort.abort();
+  const retry = getBrowserWindows(browser, [native]);
+  await stopped;
+  assert.equal(scans[1].signal.aborted, true, "Stop work when no consumer remains");
+  assert.equal(scans.length, 3, "A new request must not inherit the cancelled scan");
+  scans[2].pending.resolve(windows);
+  assert.equal((await retry)[0].tabs, windows[0].tabs);
+});
+
 test("browser navigation consumes its parent snapshot once and refreshes from live native data", async () => {
   const scans: MockValue[] = [];
   let refresh!: () => Promise<unknown>;

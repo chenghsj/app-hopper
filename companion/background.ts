@@ -3,24 +3,51 @@
 let port: browser.runtime.Port | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let retryDelay = 1000;
+let focusRevision = 0;
+browser.windows?.onFocusChanged?.addListener(() => {
+  focusRevision++;
+});
+
+async function lastFocusedIdentity() {
+  const revision = focusRevision;
+  try {
+    const window = await browser.windows.getLastFocused();
+    if (!Number.isSafeInteger(window.id) || revision !== focusRevision) return undefined;
+    return { lastFocusedWindowId: window.id, focusRevision: revision };
+  } catch {
+    return undefined;
+  }
+}
 
 type NativeCommand = { requestId: string; command: string; tabId?: number; windowId?: number };
 
+function tabUrl(tab: browser.tabs.Tab): string {
+  return tab.url || ("pendingUrl" in tab && typeof tab.pendingUrl === "string" ? tab.pendingUrl : "");
+}
+
 async function handleCommand(message: NativeCommand) {
   if (message.command === "status") {
-    return { version: browser.runtime.getManifest().version };
+    return { version: browser.runtime.getManifest().version, ...(await lastFocusedIdentity()) };
   }
   if (message.command === "list") {
     const windows = await browser.windows.getAll({ populate: true, windowTypes: ["normal"] });
+    const identity = await lastFocusedIdentity();
+    const hasIdentity = identity && windows.some((window) => window.id === identity.lastFocusedWindowId);
     return windows.map((window) => {
       const tabs = window.tabs || [];
+      const activeTab = tabs.find((tab) => tab.active);
+      const activeTabUrl = activeTab ? tabUrl(activeTab) : "";
       return {
         id: window.id,
-        title: (tabs.find((tab) => tab.active) || tabs[0] || {}).title || "",
+        title: (activeTab || tabs[0] || {}).title || "",
+        ...(activeTabUrl ? { activeTabUrl } : {}),
+        ...(hasIdentity
+          ? { isLastFocused: window.id === identity.lastFocusedWindowId, focusRevision: identity.focusRevision }
+          : {}),
         tabs: tabs.map((tab) => ({
           id: tab.id,
           title: tab.title || "",
-          url: tab.url || ("pendingUrl" in tab && typeof tab.pendingUrl === "string" ? tab.pendingUrl : ""),
+          url: tabUrl(tab),
         })),
       };
     });

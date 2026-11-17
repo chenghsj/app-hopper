@@ -138,7 +138,7 @@ for (const id of ["firefox", "zen"]) {
     const socketPath = await waitForSocket(child, directory);
     assert.equal(fs.statSync(directory).mode & 0o777, 0o700);
     assert.equal(fs.statSync(socketPath).mode & 0o777, 0o600);
-    const nativeFocus: [number, number][] = [];
+    const nativeFocus: number[] = [];
     let nativeWindows: { id: number; pid: number; app: string }[] = [];
     const load = createLoader({
       "./firefox-integration": {
@@ -147,9 +147,11 @@ for (const id of ["firefox", "zen"]) {
       },
       "../windows": {
         queryWindows: async () => nativeWindows,
-        focusNativeWindowById: async (id, pid) => {
+        focusNativeWindowById: async (id, pid, application) => {
           assert.deepEqual(calls.at(-1), ["window", 10, { focused: true }]);
-          nativeFocus.push([id, pid]);
+          assert.equal(pid, undefined);
+          assert.deepEqual(application, { appName: browser.appName, appPath: undefined });
+          nativeFocus.push(id);
         },
       },
     });
@@ -162,7 +164,7 @@ for (const id of ["firefox", "zen"]) {
     assert.equal((await firefox.getFirefoxWindows(browser))[0].tabs[1].url, windows[0].tabs[1].url);
     nativeWindows = [{ id: 155, pid: 99, app: browser.appName }];
     await firefox.focusFirefoxTab(window.id, window.tabs[1].id, browser, "", "155");
-    assert.deepEqual(nativeFocus, [[155, 99]]);
+    assert.deepEqual(nativeFocus, [155]);
     assert.deepEqual(calls, [
       ["tab", 21, { active: true }],
       ["window", 10, { focused: true }],

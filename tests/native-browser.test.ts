@@ -4,7 +4,7 @@ import type { BrowserConfig, BrowserWindow } from "../src/browsers/types";
 import type { Window } from "../src/windows";
 import createLoader from "./load-ts.ts";
 
-for (const engine of ["chromium", "webkit"] as const) {
+for (const engine of ["chromium", "webkit", "firefox"] as const) {
   test(`${engine} focuses a known tab without waiting for unrelated application discovery`, async () => {
     let release!: (windows: Window[]) => void;
     const unrelatedDiscovery = new Promise<Window[]>((resolve) => {
@@ -31,6 +31,8 @@ for (const engine of ["chromium", "webkit"] as const) {
       await focus;
     }
   });
+
+  if (engine === "firefox") continue;
 
   test(`${engine} list and focus share native targets while preserving the engine's window policy`, async () => {
     const browser: BrowserConfig = { id: engine, appName: "Browser", engine };

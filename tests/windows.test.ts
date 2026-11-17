@@ -399,6 +399,11 @@ test("AX subpage refresh updates its own snapshot and remains available when emp
     "@raycast/api": ui,
     "@raycast/utils": { runAppleScript: async () => response },
     react: {
+      useRef: (initial) => {
+        const i = cursor++;
+        if (!(i in states)) states[i] = { current: initial };
+        return states[i];
+      },
       useState: (initial) => {
         const i = cursor++;
         if (!(i in states)) states[i] = initial;

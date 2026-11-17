@@ -44,3 +44,28 @@ test("native commands use the Store-built package with encoded arguments and pre
   ]);
   await assert.rejects(helpers.runNativeHelper("macos-windows", ["fail"]), /Window closed/);
 });
+
+test("native window focus preserves optional PID and application ownership in its helper arguments", async () => {
+  const calls: string[][] = [];
+  const { focusNativeWindowById } = createLoader({
+    "./helpers/native-helper": {
+      runNativeHelper: async (name: string, args: string[]) => {
+        assert.equal(name, "macos-windows");
+        calls.push(args);
+      },
+    },
+  })("src/windows.ts");
+  const application = { appName: "Zen", appPath: "/Applications/Zen.app" };
+  await focusNativeWindowById(10);
+  await focusNativeWindowById(10, 20);
+  await focusNativeWindowById(10, undefined, application);
+  await focusNativeWindowById(10, 20, application);
+  assert.deepEqual(calls, [
+    ["focus", "10"],
+    ["focus", "10", "20"],
+    ["focus", "10", "", "Zen", "/Applications/Zen.app"],
+    ["focus", "10", "20", "Zen", "/Applications/Zen.app"],
+  ]);
+  await assert.rejects(focusNativeWindowById(Number.NaN, undefined, application), /Invalid window ID/);
+  assert.equal(calls.length, 4);
+});

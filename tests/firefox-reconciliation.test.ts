@@ -119,7 +119,7 @@ for (const appName of ["Firefox", "Zen"]) {
   test(`${appName} reconciles same-title windows by available URLs without duplicate search rows`, async () => {
     const bridge = [companionWindow(1), companionWindow(2)].map((window, index) => ({
       ...window,
-      tabs: [{ ...window.tabs[0], url: `https://example.org/#window-${index}` }],
+      tabs: [{ ...window.tabs[0], url: `https://www.example.org/#window-${index}` }],
     }));
     // Reverse native order: positional matching would assign the wrong Space and native identity.
     const axWindows = [1, 0].map((index) => ({
@@ -156,6 +156,78 @@ test("ambiguous same-title windows with no URL evidence remain separate", async 
   );
   assert.equal(windows.length, 4);
   assert(windows.slice(0, 2).every((window: BrowserWindow) => window.nativeWindowId === undefined));
+});
+
+for (const appName of ["Firefox", "Zen"]) {
+  test(`${appName} pairs unreadable same-title windows using their retained address-bar URLs`, async () => {
+    const bridge = [companionWindow(1), companionWindow(2)].map((window, index) => ({
+      ...window,
+      tabs: [{ ...window.tabs[0], url: `https://www.example.org/#window-${index}` }],
+    }));
+    const axWindows = [1, 0].map((index) => ({
+      ...unavailableWindow(String(155 + index), "Current page"),
+      space: index + 1,
+      activeTabUrl: `example.org/#window-${index}`,
+    }));
+    const firefox = adapter(bridge, axWindows);
+    const windows = await firefox.getFirefoxWindows({ appName }, nativeWindows(appName, axWindows));
+    assert.equal(windows.length, 2, "Pair actual windows instead of collapsing duplicate observations");
+    assert.deepEqual(
+      windows.map((window: BrowserWindow) => [window.id, window.nativeWindowId, window.space]),
+      [
+        [`${session}:1`, "155", 1],
+        [`${session}:2`, "156", 2],
+      ],
+    );
+  });
+}
+
+test("a unique URL match resolves before title-only candidates so the other window can also pair", async () => {
+  const bridge = [companionWindow(1), companionWindow(2)].map((window, index) => ({
+    ...window,
+    title: "YouTube",
+    tabs: [{ ...window.tabs[0], title: "YouTube", url: index === 0 ? "about:blank" : "https://www.youtube.com/" }],
+  }));
+  const axWindows = [
+    { ...unavailableWindow("155", "YouTube"), space: 1 },
+    { ...unavailableWindow("156", "YouTube"), space: 2, activeTabUrl: "youtube.com" },
+  ];
+  const windows = await adapter(bridge, axWindows).getFirefoxWindows(
+    { appName: "Zen" },
+    nativeWindows("Zen", axWindows),
+  );
+  assert.deepEqual(
+    windows.map((window: BrowserWindow) => [window.id, window.nativeWindowId, window.space]),
+    [
+      [`${session}:1`, "155", 1],
+      [`${session}:2`, "156", 2],
+    ],
+  );
+});
+
+test("trimmed www addresses remain ambiguous when two companion hosts have the same visible address", async () => {
+  const bridge = [companionWindow(1), companionWindow(2)].map((window, index) => ({
+    ...window,
+    tabs: [{ ...window.tabs[0], url: index === 0 ? "https://www.example.com/" : "https://example.com/" }],
+  }));
+  const axWindows = [{ ...unavailableWindow("155", "Current page"), activeTabUrl: "example.com" }];
+  const windows = await adapter(bridge, axWindows).getFirefoxWindows(
+    { appName: "Zen" },
+    nativeWindows("Zen", axWindows),
+  );
+  assert.equal(windows.length, 3);
+  assert(windows.slice(0, 2).every((window: BrowserWindow) => window.nativeWindowId === undefined));
+});
+
+test("an explicit native URL preserves host differences instead of stripping www", async () => {
+  const bridge = [{ ...companionWindow(), tabs: [{ id: 11, title: "Current page", url: "https://www.example.com/" }] }];
+  const axWindows = [{ ...unavailableWindow("155", "Current page"), activeTabUrl: "https://example.com/" }];
+  const windows = await adapter(bridge, axWindows).getFirefoxWindows(
+    { appName: "Zen" },
+    nativeWindows("Zen", axWindows),
+  );
+  assert.equal(windows.length, 2);
+  assert.equal(windows[0].nativeWindowId, undefined);
 });
 
 test("conflicting known URLs do not merge even when the title is unique", async () => {
@@ -251,3 +323,62 @@ test("partial URL evidence matches duplicate tab titles without reusing a compan
   );
   assert.equal(conflict.length, 2, "two native tabs cannot reuse the same companion tab as URL evidence");
 });
+
+for (const appName of ["Firefox", "Zen"]) {
+  for (const reportsActiveUrl of [false, true]) {
+    test(`${appName} does not assign a background tab's private native window (${reportsActiveUrl ? "new" : "legacy"} companion)`, async () => {
+      const bridge = [
+        {
+          ...companionWindow(),
+          ...(reportsActiveUrl ? { activeTabUrl: "https://example.com/#active" } : {}),
+          tabs: [
+            { id: 11, title: "Current page", url: "https://example.com/#active" },
+            { id: 12, title: "Current page", url: "https://example.com/#background" },
+          ],
+        },
+      ];
+      const axWindows = [
+        { ...unavailableWindow("155", "Current page"), space: 1 },
+        {
+          ...unavailableWindow("156", "Current page"),
+          space: 2,
+          activeTabUrl: "https://example.com/#background",
+        },
+      ];
+      const windows = await adapter(bridge, axWindows).getFirefoxWindows(
+        { appName },
+        nativeWindows(appName, axWindows),
+      );
+      assert.equal(windows[0].nativeWindowId, reportsActiveUrl ? "155" : undefined);
+      assert.equal(windows[0].space, reportsActiveUrl ? 1 : undefined);
+      assert(
+        windows.some((window: BrowserWindow) => window.id === "156"),
+        "Keep the uncovered private window",
+      );
+      if (!reportsActiveUrl) {
+        assert.equal(windows.length, 3, "Duplicate titles without active-tab identity must stay unresolved");
+      }
+    });
+  }
+
+  test(`${appName} pairs duplicate tab titles using the companion's actual active URL`, async () => {
+    const bridge = [
+      {
+        ...companionWindow(),
+        activeTabUrl: "https://example.com/#active",
+        tabs: [
+          { id: 11, title: "Current page", url: "https://example.com/#background" },
+          { id: 12, title: "Current page", url: "https://example.com/#active" },
+        ],
+      },
+    ];
+    const axWindows = [
+      { ...unavailableWindow("156", "Current page"), space: 2, activeTabUrl: "example.com/#background" },
+      { ...unavailableWindow("155", "Current page"), space: 1, activeTabUrl: "example.com/#active" },
+    ];
+    const windows = await adapter(bridge, axWindows).getFirefoxWindows({ appName }, nativeWindows(appName, axWindows));
+    assert.equal(windows[0].nativeWindowId, "155");
+    assert.equal(windows[0].space, 1);
+    assert(windows.some((window: BrowserWindow) => window.id === "156"));
+  });
+}

@@ -21,8 +21,11 @@ Raycast generates `assets/compiled_raycast_swift/app-hopper-native` and its Type
 
 - `runtime-status` reads Accessibility permission without requesting it.
 - `MacOSWindowsHelper` discovers apps/windows and focuses exact native identities.
-- `ChromiumHelper`, `WebKitHelper`, and `FirefoxHelper` keep their engine-specific traversal and focus policies. Each browser owns a separate process and serialized JSON-line queue. Retained AX tab references live for that process; closing stdin terminates it. A slow browser cannot expire another browser's targets.
+- Its `list` command accepts an optional application owner name and bundle path. Scoped calls filter owners before AX discovery; omitting the filter retains the complete native snapshot and its minimized/hidden-window handling.
+- `ChromiumHelper`, `WebKitHelper`, and `FirefoxHelper` keep their engine-specific traversal and focus policies. Each browser owns a separate process and serialized JSON-line queue. Focus runs ahead of scans that have not started, without interrupting the active command or restarting the process. Retained AX tab references live for that process; closing stdin terminates it. A slow browser cannot expire another browser's targets.
 - `FirefoxBridge` keeps the existing length-prefixed native messaging and per-session Unix socket protocols. Firefox or Zen owns the process. Installation writes a small, shell-escaped text launcher pointing to Raycast's generated executable. It neither copies a binary nor invokes a compiler. Moving the extension or changing its installed path requires **Repair Local Helper**.
+
+Cancelling window discovery terminates its one-shot helper or AppleScript subprocess. Browser sessions retain their process and tab references: cancelled queued scans are removed, while an already active response is consumed before the next command starts. Companion cancellation closes only that request's socket, leaving the browser-owned native messaging host running.
 
 Shared discovery, tab-reference storage and exact-window focus remain canonical Swift sources in the same package. Browser matching, Space metadata and focus validation retain their existing behavior. The signed companion protocol and release pin are unchanged.
 

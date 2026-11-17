@@ -35,6 +35,7 @@ for (const engine of ["chromium", "webkit", "firefox"]) {
       assetPath("browser-tab-references.swift"),
       fixturePath("tab-identity-support.swift"),
       fixturePath(`tab-identity-${engine}.swift`),
+      ...(engine === "firefox" ? [assetPath("browser-process.swift")] : []),
     ]);
   });
 }

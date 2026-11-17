@@ -31,7 +31,9 @@ func copyAttr(_ element: AXUIElement, _ attribute: String) -> Any? {
   return nil
 }
 func stringAttr(_ element: AXUIElement, _ attribute: String) -> String {
-  precondition(element.timeout > 0, "Bound each Accessibility object before querying it")
+  if requireElementTimeout {
+    precondition(element.timeout > 0, "Bound each Accessibility object before querying it")
+  }
   return "AXWindow"
 }
 func _AXUIElementGetWindow(_ element: AXUIElement, _ wid: UnsafeMutablePointer<CGWindowID>) -> AXError {

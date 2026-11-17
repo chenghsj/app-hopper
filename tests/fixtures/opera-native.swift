@@ -59,7 +59,7 @@ func readTabInfo(_ element: Element) -> (title: String, selected: Bool, customUr
 }
 func findBrowserPIDs(appName: String, nativeWindows: [NativeWindowInput]) -> [Int32] { [20] }
 func discoverAXWindows(pid: Int32, expectedWindowIds: Set<CGWindowID>, maxElementId: UInt64 = 500, enhancedUI: Bool = false) -> [CGWindowID: Element] { [10: window] }
-func fetchAppleEventTabUrlsByPid(pid: Int32, appName: String = "") -> [(titles: [String], urls: [String])]? { nil }
+func fetchAppleEventTabUrlsByPid(pid: Int32, appName: String = "", budget: BrowserQueryBudget = BrowserQueryBudget()) -> [(titles: [String], urls: [String])]? { nil }
 func AXUIElementGetPid(_ element: Element, _ pid: UnsafeMutablePointer<Int32>) -> AXError { pid.pointee = 20; return .success }
 func AXUIElementPerformAction(_ element: Element, _ action: CFString) -> AXError {
   if action as String == kAXPressAction {

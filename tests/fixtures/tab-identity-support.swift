@@ -43,8 +43,12 @@ func AXUIElementPerformAction(_ element: AXUIElement, _ action: CFString) -> AXE
 }
 func AXUIElementSetAttributeValue(_ element: AXUIElement, _ attribute: CFString, _ value: CFTypeRef) -> AXError { .success }
 
+var fixtureAppName = "Test Browser"
+var fixtureAppPath = "/Applications/Test Browser.app"
 struct NSRunningApplication {
   let launchDate: Date? = Date(timeIntervalSince1970: 1)
+  var localizedName: String? { fixtureAppName }
+  var bundleURL: URL? { URL(fileURLWithPath: fixtureAppPath) }
   init?(processIdentifier: Int32) {}
   func unhide() {}
   func activate() {}

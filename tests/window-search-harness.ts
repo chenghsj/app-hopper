@@ -1,7 +1,7 @@
 import createLoader, { type MockModules, type MockValue } from "./load-ts.ts";
 
-/** Exercise the installed Raycast usePromise with persistent React hook state. */
-export function windowSearchHarness(mocks: MockModules = {}) {
+/** Exercise installed Raycast promise hooks with persistent React hook state. */
+function hookHarness(file: string, exportName: string, mocks: MockModules = {}) {
   let cursor = 0;
   const slots: MockValue[] = [];
   const pending = new Map<number, () => void>();
@@ -58,7 +58,7 @@ export function windowSearchHarness(mocks: MockModules = {}) {
     "@raycast/api": api,
   })("node_modules/@raycast/utils/dist/main.js");
   const load = createLoader({ ...mocks, react, "@raycast/api": api, "@raycast/utils": utils });
-  const hook = load("src/use-window-search.ts").useWindowSearch;
+  const hook = load(file)[exportName];
   function flushEffects() {
     const effects = [...pending.values()];
     pending.clear();
@@ -66,9 +66,9 @@ export function windowSearchHarness(mocks: MockModules = {}) {
   }
   return {
     flushEffects,
-    render(enabled = true, flush = true) {
+    render(args: MockValue[], flush = true) {
       cursor = 0;
-      const result = hook(enabled);
+      const result = hook(...args);
       if (flush) flushEffects();
       return result;
     },
@@ -77,4 +77,32 @@ export function windowSearchHarness(mocks: MockModules = {}) {
       cleanups.clear();
     },
   };
+}
+
+export function windowSearchHarness(mocks: MockModules = {}) {
+  const harness = hookHarness("src/use-window-search.ts", "useWindowSearch", mocks);
+  return { ...harness, render: (enabled = true, flush = true) => harness.render([enabled], flush) };
+}
+
+export function browserSnapshotHarness(mocks: MockModules = {}) {
+  const harness = hookHarness("src/use-browser-snapshot.ts", "useBrowserSnapshot", mocks);
+  return { ...harness, render: (browser: MockValue, snapshot?: MockValue) => harness.render([browser, snapshot]) };
+}
+
+export function browserTabsHarness(mocks: MockModules = {}) {
+  const jsx = (type: MockValue, props: MockValue) => ({ type, props });
+  const harness = hookHarness("src/browser-windows.tsx", "BrowserTabsView", {
+    ...mocks,
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+    "./firefox-integration": {},
+    "@raycast/api": {
+      Action: "Action",
+      ActionPanel: "ActionPanel",
+      List: { Item: "List.Item", EmptyView: "List.EmptyView" },
+      Icon: {},
+      Keyboard: { Shortcut: { Common: { Refresh: {} } } },
+      ...mocks["@raycast/api"],
+    },
+  });
+  return { ...harness, render: (browser: MockValue, window: MockValue) => harness.render([{ browser, window }]) };
 }

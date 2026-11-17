@@ -29,7 +29,11 @@ test("Opera list and focus reach its deep tab strip and preserve the exact tab a
     precondition(pressed == ["target"], "Reordering same-title tabs must not change the focus target")
     try handleList(args: ["Google Chrome", "[{\\\"id\\\":10,\\\"pid\\\":20,\\\"title\\\":\\\"Same\\\"}]"])`,
     ].join("\n"),
-    [assetPath("browser-tab-references.swift"), fixturePath("opera-native.swift")],
+    [
+      assetPath("browser-tab-references.swift"),
+      assetPath("browser-query-budget.swift"),
+      fixturePath("opera-native.swift"),
+    ],
   );
   const [list, focused, chrome] = output.trim().split("\n");
   const windows = JSON.parse(list);
@@ -48,11 +52,11 @@ test("Opera URL enrichment uses its scripting tab class while Chrome keeps the C
       swiftFunction(source, "chromiumBrowserPolicy"),
       swiftFunction(source, "fetchAppleEventTabUrlsByPid"),
       `var requestedClasses: [FourCharCode] = []
-    func queryAppleEventNestedStrings(pid: Int32, prop: FourCharCode, tabClass: FourCharCode = fourCC("CrTb")) -> [[String]]? {
+    func queryAppleEventNestedStrings(pid: Int32, prop: FourCharCode, tabClass: FourCharCode = fourCC("CrTb"), timeout: TimeInterval = 2) -> [[String]]? {
       requestedClasses.append(tabClass)
       return prop == fourCC("URL ") ? [["https://opera.example/background"]] : [["Background"]]
     }
-    func fetchTabsViaAppleScript(appName: String) -> [(titles: [String], urls: [String])]? {
+    func fetchTabsViaAppleScript(appName: String, timeout: TimeInterval = 2) -> [(titles: [String], urls: [String])]? {
       preconditionFailure("Successful native queries must not use the script fallback")
     }
     for (app, tabClass) in [("Opera", "OpTb"), ("Google Chrome", "CrTb")] {
@@ -63,5 +67,6 @@ test("Opera URL enrichment uses its scripting tab class while Chrome keeps the C
       precondition(windows[0].titles == ["Background"])
     }`,
     ].join("\n"),
+    [assetPath("browser-query-budget.swift")],
   );
 });

@@ -9,7 +9,10 @@ function discoveryHarness(main: string) {
     [
       readFixture("native-window-discovery.swift"),
       swiftFunction(source, "windowId"),
-      swiftFunction(source, "discoverAXWindowElements").replaceAll("ProcessInfo.processInfo.systemUptime", "fixtureTime"),
+      swiftFunction(source, "discoverAXWindowElements").replaceAll(
+        "ProcessInfo.processInfo.systemUptime",
+        "fixtureTime",
+      ),
       main,
     ].join("\n"),
   );
@@ -66,6 +69,40 @@ test("native focus checks only the target window and rejects a closed or reused 
   );
 });
 
+test("companion window focus rejects a reused ID owned by another application before AX discovery", () => {
+  runSwiftHarness(
+    [
+      "import Foundation\nstruct NativeWindowInput {}",
+      "var ownerPid: Int32? = 20; var discoveries = 0",
+      "func resolveOwnerPid(for id: CGWindowID, explicitPid: Int32?) -> Int32? { ownerPid }",
+      `func discoverAXWindowElements(pid: Int32, expectedWindowIds: Set<CGWindowID>, maxElementId: UInt64, verifyRoleForDirectCandidates: Bool) -> [CGWindowID: AXUIElement] {
+        discoveries += 1
+        return [10: window]
+      }`,
+      swiftFunction(readAsset("macos-windows.swift"), "handleFocus"),
+      `try handleFocus(args: ["10", "", "Test Browser", "/Applications/Test Browser.app"])
+      precondition(discoveries == 1 && focusRequests.count == 1)
+      fixtureAppPath = "/Applications/Other.app"
+      do {
+        try handleFocus(args: ["10", "", "Test Browser", "/Applications/Test Browser.app"])
+        fatalError("A reused window ID must not activate another browser bundle")
+      } catch {}
+      fixtureAppName = "Other"
+      do {
+        try handleFocus(args: ["10", "", "Test Browser"])
+        fatalError("Without a bundle path, validate the live app name")
+      } catch {}
+      ownerPid = nil
+      do {
+        try handleFocus(args: ["10", "", "Test Browser"])
+        fatalError("A closed window must fail")
+      } catch {}
+      precondition(discoveries == 1 && focusRequests.count == 1, "Reject changed owners before AX or activation")`,
+    ].join("\n"),
+    [fixturePath("tab-identity-support.swift")],
+  );
+});
+
 test("native list retains minimized dialogs and off-space apps without exposing utility windows", () => {
   const source = readAsset("macos-windows.swift");
   const types = source.slice(source.indexOf("struct WindowFrame"), source.indexOf("func copyAttr"));
@@ -96,4 +133,41 @@ test("native list retains minimized dialogs and off-space apps without exposing 
   assert.equal(windows.find((window) => window.id === 10)!.frontOrder, 0);
   assert.equal(windows.find((window) => window.id === 12)!.isHidden, true);
   assert.equal(windows.find((window) => window.id === 25)!.isMinimized, undefined);
+});
+
+test("application-scoped native discovery rejects unrelated owners before Accessibility queries", () => {
+  const source = readAsset("macos-windows.swift");
+  const types = source.slice(source.indexOf("struct WindowFrame"), source.indexOf("func copyAttr"));
+  const list = swiftFunction(source, "handleList")
+    .replaceAll("CGWindowListCopyWindowInfo(", "fixtureWindowInfo(")
+    .replaceAll("NSRunningApplication(", "FixtureApplication(");
+  const output = runSwiftHarness(
+    [
+      "import AppKit\nimport ApplicationServices\nimport CoreGraphics\nimport Foundation",
+      types,
+      list,
+      "func handleApplications() throws {}\nfunc handleFocus(args: [String]) throws {}",
+      swiftFunction(source, "run"),
+      `try run(args: ["list", "Test", "/Applications/Target.app"])
+    precondition(discoveredPids == [20], "Only the requested application's owners may receive AX queries")
+    discoveredPids.removeAll()
+    otherOwnerName = "Other"
+    try run(args: ["list", "Test"])
+    precondition(discoveredPids == [20], "Name-only browser configs must also skip unrelated owners")
+    discoveredPids.removeAll()
+    try run(args: ["list", "Test", "/Applications/Other.app"])
+    precondition(discoveredPids.isEmpty, "A mismatched bundle path must fail before AX discovery")`,
+    ].join("\n"),
+    [fixturePath("native-windows-support.swift")],
+  );
+  const [windows, byName, mismatched] = output
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as NativeWindow[]);
+  assert.deepEqual(
+    windows.map((window) => window.id).sort((a, b) => a - b),
+    [10, 11],
+  );
+  assert.deepEqual(byName, windows);
+  assert.deepEqual(mismatched, []);
 });

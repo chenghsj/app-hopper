@@ -63,7 +63,7 @@ test("Zen uses Gecko AX with native app scope and a separate companion directory
   assert.deepEqual(await client.getBrowserSummary(zen, [native(10), native(11)]), { windows: 2, tabs: undefined });
   assert.equal(calls.length, before);
   await client.focusBrowserTab(zen, window, window.tabs[1]);
-  assert.deepEqual(calls.at(-1), ["focus", "Zen", "10", "10:ax:22222222-2222-2222-2222-222222222222", "Second", "110"]);
+  assert.deepEqual(calls.at(-1), ["focus", "Zen", "10", "10:ax:22222222-2222-2222-2222-222222222222", "Second"]);
   await assert.rejects(
     load("src/browsers/firefox.ts").focusFirefoxTab("abcdef1234567890:1", "abcdef1234567890:2", zen),
     /ENOENT/,

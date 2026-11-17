@@ -48,7 +48,11 @@ test("Vivaldi reads and focuses tabs inside its browser UI without collecting pa
       }
       try handleList(args: ["Google Chrome", payload])`,
     ].join("\n"),
-    [assetPath("browser-tab-references.swift"), fixturePath("opera-native.swift")],
+    [
+      assetPath("browser-tab-references.swift"),
+      assetPath("browser-query-budget.swift"),
+      fixturePath("opera-native.swift"),
+    ],
   );
   const [list, focused, fallback, chrome] = output.trim().split("\n");
   assert.equal(JSON.parse(list)[0].tabs.length, 3, "Read browser tabs and ignore both nested web areas");

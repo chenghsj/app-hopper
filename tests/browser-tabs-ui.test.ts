@@ -71,6 +71,8 @@ test("nested tabs refresh only the selected window, focus fresh targets, and can
       "@raycast/utils": {
         useCachedPromise: (load, args, options) => {
           refresh = async () => {
+            options.abortable.current?.abort();
+            options.abortable.current = new AbortController();
             try {
               data = await load(...args);
               error = undefined;
@@ -88,8 +90,10 @@ test("nested tabs refresh only the selected window, focus fresh targets, and can
       },
       "./browsers/registry": { getBrowserById: () => browser },
       "./browsers/client": {
-        getBrowserWindows: async (...args) => {
-          assert.deepEqual(args, [browser], "refresh must query live native metadata, not reuse a snapshot");
+        getBrowserWindows: async (config, nativeWindows, signal) => {
+          assert.equal(config, browser);
+          assert.equal(nativeWindows, undefined, "refresh must query live native metadata, not reuse a snapshot");
+          assert(signal instanceof AbortSignal, "nested refreshes must pass their cancellation signal");
           if (failure) throw new Error("Browser unavailable");
           return windows;
         },

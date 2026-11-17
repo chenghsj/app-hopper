@@ -22,6 +22,8 @@ function searchHarness(apps: AppGroup[], order: AppListOrder = "recent") {
   let effects: (() => void)[] = [];
   const state: MockValue[] = [];
   const saved: { key: string; value: AppListOrder }[] = [];
+  let searches = 0;
+  const searchModule = createLoader({})("src/search-results.ts");
   const useState = (initial: MockValue) => {
     const index = cursor++;
     if (!(index in state)) state[index] = typeof initial === "function" ? initial() : initial;
@@ -32,12 +34,27 @@ function searchHarness(apps: AppGroup[], order: AppListOrder = "recent") {
       },
     ];
   };
+  const useMemo = (fn: () => MockValue, dependencies: MockValue[]) => {
+    const index = cursor++;
+    const previous = state[index];
+    if (!previous || dependencies.some((value, i) => !Object.is(value, previous.dependencies[i]))) {
+      state[index] = { dependencies, value: fn() };
+    }
+    return state[index].value;
+  };
   const load = createLoader({
     react: {
       useState,
-      useMemo: (fn) => fn(),
-      useCallback: (fn) => fn,
+      useMemo,
+      useCallback: (fn, dependencies) => useMemo(() => fn, dependencies),
       useLayoutEffect: (effect) => effects.push(effect),
+    },
+    "./search-results": {
+      ...searchModule,
+      searchApplications: (...args) => {
+        searches++;
+        return searchModule.searchApplications(...args);
+      },
     },
     "@raycast/utils": {
       useCachedState: (key: string) => {
@@ -64,6 +81,9 @@ function searchHarness(apps: AppGroup[], order: AppListOrder = "recent") {
   return {
     options,
     saved,
+    get searches() {
+      return searches;
+    },
     get refreshes() {
       return refreshes;
     },
@@ -133,6 +153,23 @@ test("application search owns typing, enrichment, live targets, disappearance an
   assert.equal(browsing.arrangement.value, "name");
   assert.deepEqual(titles(browsing), ["Safari"]);
   assert.deepEqual(hook.saved, [], "typing, selection and refresh do not overwrite the saved arrangement");
+});
+
+test("typing computes search once and new observations invalidate the reused result", () => {
+  const hook = searchHarness([app(1, "Safari")]);
+  const tab = { id: "10:ax:one", title: "Docs", url: "https://example.com/docs" };
+  hook.options.data.browserTabs = { safari: [{ id: "10", title: "Work", tabs: [tab] }] };
+  hook.render().listProps.onSearchTextChange("docs");
+  assert.deepEqual(titles(hook.render()), ["Docs"]);
+  assert.equal(hook.searches, 1, "Input handling and rendering share the same computed search");
+  hook.render();
+  assert.equal(hook.searches, 1);
+  hook.options.data.browserTabs = { safari: [{ id: "10", title: "Work", tabs: [{ ...tab, title: "Fresh docs" }] }] };
+  assert.deepEqual(titles(hook.render()), ["Fresh docs"]);
+  assert.equal(hook.searches, 2, "Incoming observations must recompute the same query");
+  hook.render().listProps.onSearchTextChange("missing");
+  assert.deepEqual(titles(hook.render()), []);
+  assert.equal(hook.searches, 3);
 });
 
 test("application search holds Space sections on selection and resets them when arrangement changes", () => {

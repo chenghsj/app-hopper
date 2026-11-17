@@ -6,15 +6,17 @@ import Foundation
 struct FixtureApplication {
   let isHidden: Bool
   let activationPolicy: NSApplication.ActivationPolicy
-  let bundleURL: URL? = URL(fileURLWithPath: "/Applications/Test.app")
+  let bundleURL: URL?
   let localizedName: String? = "Test"
   init?(processIdentifier: Int32) {
+    bundleURL = URL(fileURLWithPath: processIdentifier == 20 ? "/Applications/Target.app" : "/Applications/Other.app")
     isHidden = [30, 60].contains(processIdentifier)
     activationPolicy = processIdentifier == 80 ? .accessory : .regular
   }
 }
 func CGSMainConnectionID() -> Int32 { 1 }
 func buildWindowSpaceMap(cid: Int32) -> [CGWindowID: Int] { [11: 1, 17: 2, 18: 1, 19: 1, 20: 2] }
+var otherOwnerName = "Test"
 func fixtureWindowInfo(_ options: CGWindowListOption, _ relative: CGWindowID) -> Any? {
   return (10...28).map { id -> [String: Any] in
     let pid: Int
@@ -30,15 +32,20 @@ func fixtureWindowInfo(_ options: CGWindowListOption, _ relative: CGWindowID) ->
     }
     return [kCGWindowNumber as String: id,
      kCGWindowOwnerPID as String: pid,
-     kCGWindowOwnerName as String: "Test",
+     kCGWindowOwnerName as String: pid == 20 ? "Test" : otherOwnerName,
      kCGWindowLayer as String: 0,
      kCGWindowAlpha as String: id == 18 ? 0.0 : 1.0,
      kCGWindowBounds as String: ["X": 0.0, "Y": 0.0, "Width": id == 19 ? 20.0 : 800.0, "Height": 600.0]]
   }
 }
 func AXIsProcessTrusted() -> Bool { true }
+let discoveryLock = NSLock()
+var discoveredPids = Set<Int32>()
 func discoverAXWindowElements(pid: Int32, expectedWindowIds: Set<CGWindowID>) -> [CGWindowID: CGWindowID] {
-  Dictionary(uniqueKeysWithValues: expectedWindowIds.filter { ![16, 17, 20, 25, 26, 27, 28].contains($0) }.map { ($0, $0) })
+  discoveryLock.lock()
+  discoveredPids.insert(pid)
+  discoveryLock.unlock()
+  return Dictionary(uniqueKeysWithValues: expectedWindowIds.filter { ![16, 17, 20, 25, 26, 27, 28].contains($0) }.map { ($0, $0) })
 }
 func windowAttributes(_ wid: CGWindowID) -> AXWindowMetadata? {
   AXWindowMetadata(title: "Window \\(wid)",

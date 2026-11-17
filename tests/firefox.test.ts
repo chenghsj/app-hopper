@@ -12,7 +12,8 @@ test("Raycast scopes Firefox IDs to a live session and rejects cross-profile foc
   const session = "abcdef1234567890";
   const socketPath = path.join(directory, session + ".sock");
   const commands: { tabId?: number }[] = [];
-  const nativeFocus: [number, number][] = [];
+  const nativeFocus: number[] = [];
+  let nativeQueries = 0;
   const server = net.createServer((socket) => {
     let data = "";
     socket.on("data", (chunk) => {
@@ -38,8 +39,16 @@ test("Raycast scopes Firefox IDs to a live session and rejects cross-profile foc
   });
   const load = createLoader({
     "../windows": {
-      queryWindows: async () => [{ id: 155, pid: 99, app: "Firefox" }],
-      focusNativeWindowById: async (id, pid) => nativeFocus.push([id, pid]),
+      queryWindows: async () => {
+        nativeQueries++;
+        return [{ id: 155, pid: 99, app: "Firefox" }];
+      },
+      focusNativeWindowById: async (id, pid, application) => {
+        assert.equal(pid, undefined);
+        assert.deepEqual(application, { appName: "Firefox", appPath: undefined });
+        if (id !== 155) throw new Error("Could not identify Firefox window");
+        nativeFocus.push(id);
+      },
     },
     "../helpers/browser-helper": { runBrowserHelper: async () => "[]" },
     "node:os": { homedir: () => directory },
@@ -50,7 +59,8 @@ test("Raycast scopes Firefox IDs to a live session and rejects cross-profile foc
   assert.equal(window.id, session + ":2");
   await firefox.focusFirefoxTab(window.id, window.tabs[0].id, undefined, "", "155");
   assert.equal(commands[1].tabId, 3);
-  assert.deepEqual(nativeFocus, [[155, 99]], "Companion selection must also focus the verified macOS window");
+  assert.deepEqual(nativeFocus, [155], "Companion selection must also focus the verified macOS window");
+  assert.equal(nativeQueries, 1, "Focus must not repeat the initial desktop scan");
   await assert.rejects(
     firefox.focusFirefoxTab(window.id, window.tabs[0].id, undefined, "", "999"),
     /identify.*window/i,
@@ -167,7 +177,7 @@ test("extensionless Firefox adapter matches Chromium single-window and multi-win
         args[2] === "55854" &&
         args[3] === "55854:0" &&
         args[4] === "Netflix" &&
-        args[5] === "91868",
+        args.length === 5,
     ),
   );
 });

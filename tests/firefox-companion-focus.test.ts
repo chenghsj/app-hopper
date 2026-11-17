@@ -9,6 +9,7 @@ for (const appName of ["Firefox", "Zen"]) {
     const appPath = `/Applications/${appName}.app`;
     const events: unknown[] = [];
     let apps = [{ pid: 99, localizedName: appName, bundlePath: appPath }];
+    let nativeQueries = 0;
     const native = [155, 156].map((id) => ({ id, pid: 99, app: appName, title: "Same" }));
     const firefox = createLoader({
       "./firefox-integration": { FIREFOX_DIRECTORY: "/firefox", ZEN_DIRECTORY: "/zen" },
@@ -47,7 +48,10 @@ for (const appName of ["Firefox", "Zen"]) {
           ),
       },
       "../windows": {
-        queryWindows: async () => native,
+        queryWindows: async () => {
+          nativeQueries++;
+          return native;
+        },
         getRunningApplications: async () => apps,
         activateRunningApplication: async (pid: number) => events.push(["activate", pid]),
         focusNativeWindowById: async () => assert.fail("Ambiguous windows must never be raised by a guessed ID"),
@@ -58,7 +62,8 @@ for (const appName of ["Firefox", "Zen"]) {
     assert.equal(window.nativeWindowId, undefined);
     events.length = 0;
     await firefox.focusFirefoxTab(window.id, window.tabs[0].id, browser);
-    assert.deepEqual(events, ["focus", "list", ["activate", 99]]);
+    assert.deepEqual(events, ["focus", ["activate", 99]]);
+    assert.equal(nativeQueries, 1, "Companion focus must not repeat discovery after the original list");
 
     apps = [
       { pid: 100, localizedName: appName, bundlePath: `/other/${appName}.app` },
@@ -72,5 +77,34 @@ for (const appName of ["Firefox", "Zen"]) {
     events.length = 0;
     await assert.rejects(firefox.focusFirefoxTab(window.id, window.tabs[0].id, browser), /identify.*process/i);
     assert(!events.some((event) => Array.isArray(event)), "Do not guess between separate browser processes");
+  });
+
+  test(`${appName} companion focuses a known native window without scanning unrelated applications`, async () => {
+    const session = "abcdef1234567890";
+    const scope = { appName, appPath: `/Applications/${appName}.app` };
+    const focused: unknown[][] = [];
+    const firefox = createLoader({
+      "./firefox-integration": { FIREFOX_DIRECTORY: "/firefox", ZEN_DIRECTORY: "/zen" },
+      "node:net": {
+        createConnection: () => {
+          const socket = new EventEmitter() as EventEmitter & {
+            setTimeout(): void;
+            destroy(): void;
+            write(): void;
+          };
+          socket.setTimeout = () => {};
+          socket.destroy = () => {};
+          socket.write = () => queueMicrotask(() => socket.emit("data", Buffer.from('{"data":true}\n')));
+          queueMicrotask(() => socket.emit("connect"));
+          return socket;
+        },
+      },
+      "../windows": {
+        queryWindows: async () => assert.fail("Known companion targets must not scan every app"),
+        focusNativeWindowById: async (...args: unknown[]) => focused.push(args),
+      },
+    })("src/browsers/firefox.ts");
+    await firefox.focusFirefoxTab(`${session}:1`, `${session}:2`, { ...scope, engine: "firefox" }, "", "155");
+    assert.deepEqual(focused, [[155, undefined, scope]], "Validate the target's live owner in the native helper");
   });
 }

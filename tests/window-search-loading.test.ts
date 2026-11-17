@@ -190,6 +190,83 @@ for (const stage of ["native", "enrichment"]) {
   });
 }
 
+test("cancelling native discovery prevents every later enrichment query from starting", async () => {
+  const pending = deferred<MockValue[]>();
+  const calls: string[] = [];
+  const { search, writes, toasts } = fixture({
+    queryWindows: () => pending.promise,
+    getRunningApplications: async () => {
+      calls.push("applications");
+      return [];
+    },
+    getApplicationOrder: async () => {
+      calls.push("order");
+      return [];
+    },
+    getRunningApplicationMetadata: async () => {
+      calls.push("metadata");
+      return {};
+    },
+    getBrowserWindows: async () => {
+      calls.push("browser");
+      return tabs;
+    },
+    queryAXWindows: async () => {
+      calls.push("ax");
+      return [];
+    },
+  });
+  const loading = search.refresh();
+  await tick();
+  search.cancel();
+  pending.resolve([native, { ...native, app: "Notes", pid: 30, "has-ax-reference": false }]);
+  await loading;
+  assert.deepEqual(calls, []);
+  assert.deepEqual(writes, []);
+  assert.deepEqual(toasts, []);
+});
+
+test("cancelling the application query prevents windowless-app AX queries from starting", async () => {
+  const applications = deferred<MockValue[]>();
+  const calls: number[] = [];
+  const { search } = fixture({
+    getRunningApplications: () => applications.promise,
+    queryAXWindows: async (pid: number) => {
+      calls.push(pid);
+      return [];
+    },
+  });
+  const loading = search.refresh();
+  await tick();
+  search.cancel();
+  applications.resolve([{ pid: 30, localizedName: "Notes" }]);
+  await loading;
+  assert.deepEqual(calls, []);
+});
+
+test("replacing a refresh aborts its native query before the new snapshot is loaded", async () => {
+  const signals: AbortSignal[] = [];
+  const { search, writes } = fixture({
+    queryWindows: (signal: AbortSignal) => {
+      assert(signal, "Pass cancellation to the native query");
+      signals.push(signal);
+      if (signals.length > 1) return Promise.resolve([native]);
+      return new Promise((_resolve, reject) =>
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
+      );
+    },
+  });
+  const first = search.refresh();
+  await tick();
+  const second = search.refresh();
+  await Promise.all([first, second]);
+  assert.equal(signals.length, 2);
+  assert.equal(signals[0].aborted, true);
+  assert.equal(signals[1].aborted, false);
+  assert.deepEqual(search.getSnapshot().data.windows, [native]);
+  assert.equal(writes.length, 1);
+});
+
 test("a failed refresh keeps the completed snapshot and clears its error when retried", async () => {
   const cached = { ...emptyWindowData(), windows: [native], browserTabs: { firefox: tabs } };
   let fail = true;

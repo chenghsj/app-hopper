@@ -53,6 +53,26 @@ function renderer(
   let cursor = 0;
   const state: MockValue[] = [];
   let layoutEffects: (() => void)[] = [];
+  const effectDependencies = new Map<number, MockValue[]>();
+  const effectCleanups = new Map<number, () => void>();
+  const useEffect = (effect: () => (() => void) | void, dependencies: MockValue[]) => {
+    const index = cursor++;
+    const previous = effectDependencies.get(index);
+    if (
+      previous &&
+      previous.length === dependencies.length &&
+      previous.every((value, i) => Object.is(value, dependencies[i]))
+    ) {
+      return;
+    }
+    effectDependencies.set(index, dependencies);
+    layoutEffects.push(() => {
+      effectCleanups.get(index)?.();
+      const cleanup = effect();
+      if (cleanup) effectCleanups.set(index, cleanup);
+      else effectCleanups.delete(index);
+    });
+  };
   const useState = (initial: MockValue) => {
     const index = cursor++;
     if (!(index in state)) state[index] = typeof initial === "function" ? initial() : initial;
@@ -66,7 +86,7 @@ function renderer(
   const load = createLoader({
     react: {
       useMemo: (fn) => fn(),
-      useEffect: () => {},
+      useEffect,
       useLayoutEffect: (effect) => layoutEffects.push(effect),
       useCallback: (fn) => fn,
       useRef: (initial) => useState(() => ({ current: initial }))[0],
@@ -119,6 +139,10 @@ function renderer(
       const tree = renderChildren(View(props));
       for (const effect of layoutEffects) effect();
       return tree;
+    },
+    unmount() {
+      effectCleanups.forEach((cleanup) => cleanup());
+      effectCleanups.clear();
     },
   };
 }
