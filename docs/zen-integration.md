@@ -6,7 +6,7 @@ The optional Zen companion supplies live tab titles, URLs and IDs through WebExt
 
 Open **App Hopper**, select Zen, then press **⌘K** and choose **Set up Zen Integration**. A configured signed release provides **Enable Zen Integration**, signature-checked installation in Zen, version checks, update, repair and removal. Firefox and Zen use the same companion identity and signed XPI. The companion detects Zen runtime metadata to select the Zen native host.
 
-The shared signed companion 1.0.1 is available from the [GitHub Release](https://github.com/chenghsj/app-hopper/releases/tag/companion-v1.0.1), with URL and SHA-256 pinned in `assets/companion-integration.json`. **Prepare Local Helper** registers the native host without installing an add-on.
+The shared signed companion 1.0.3 is available from the [GitHub Release](https://github.com/chenghsj/app-hopper/releases/tag/companion-v1.0.3), with URL and SHA-256 pinned in `assets/companion-integration.json`. **Prepare Local Helper** registers the native host without installing an add-on.
 
 For development, run `npm run build:zen`, prepare the local helper, then load `dist/companion/extension/manifest.json` through Zen's `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on**. This grants the companion `tabs` and `nativeMessaging` access and lasts until Zen restarts. After loading, refresh App Hopper. This is a development test, not a signed release installation.
 
@@ -23,7 +23,7 @@ No browsing-history database or session-restore file is read. The companion send
 
 ## Release
 
-The current 1.0.1 release is already signed, hosted, and pinned. The following steps prepare a future companion version; installation acceptance uses the existing release.
+The current 1.0.3 release is signed, hosted, and pinned. The following steps prepare a future companion version; installation acceptance uses the existing release.
 
 `npm run package:companion` creates the single `dist/companion/app-hopper-companion-<version>.zip` for Mozilla signing. The older `package:zen` and `package:firefox` commands are aliases for this same artifact. After obtaining an unlisted signed XPI and hosting it at a direct HTTPS URL, run:
 

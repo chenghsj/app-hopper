@@ -27,6 +27,6 @@ Raycast generates `assets/compiled_raycast_swift/app-hopper-native` and its Type
 
 Cancelling window discovery terminates its one-shot helper or AppleScript subprocess. Browser sessions retain their process and tab references: cancelled queued scans are removed, while an already active response is consumed before the next command starts. Companion cancellation closes only that request's socket, leaving the browser-owned native messaging host running.
 
-Shared discovery, tab-reference storage and exact-window focus remain canonical Swift sources in the same package. Browser matching, Space metadata and focus validation retain their existing behavior. The signed companion protocol and release pin are unchanged.
+Shared discovery, tab-reference storage and exact-window focus remain canonical Swift sources in the same package. Firefox/Zen retain the shared signed companion identity and framed messaging protocol; `assets/companion-integration.json` pins the companion release.
 
 No browsing-history or session-restore database is read. Tab data travels through local IPC; Raycast's local cache retains the latest search snapshot. Downloaded-install acceptance, Intel hardware, permissions and browser workflows remain separate checks in the [compatibility guide](compatibility.md).

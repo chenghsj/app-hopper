@@ -3,6 +3,7 @@ import { renderer, findAll, type TestNode } from "./render-ui.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import createLoader from "./load-ts.ts";
+import { appWindowsHarness } from "./window-search-harness.ts";
 
 function modules(extra: MockModules = {}) {
   const load = createLoader({
@@ -383,42 +384,12 @@ test("WebKit browsers (Safari and Orion) are registered and supported via webkit
 });
 
 test("AX subpage refresh updates its own snapshot and remains available when empty", async () => {
-  const states: MockValue[] = [];
-  let cursor = 0,
-    response = "3\x1fAXStandardWindow\x1fRenamed\x1e",
-    focused: MockValue;
-  const component = (name: string) => Object.assign(() => {}, { Item: `${name}.Item`, EmptyView: `${name}.EmptyView` });
-  const ui = {
-    Action: component("Action"),
-    ActionPanel: component("ActionPanel"),
-    List: component("List"),
-    Icon: { Repeat: "repeat" },
-    Keyboard: { Shortcut: { Common: { Refresh: { modifiers: ["cmd"], key: "r" } } } },
-  };
-  const { AXWindowsView } = modules({
-    "@raycast/api": ui,
-    "@raycast/utils": { runAppleScript: async () => response },
-    react: {
-      useRef: (initial) => {
-        const i = cursor++;
-        if (!(i in states)) states[i] = { current: initial };
-        return states[i];
-      },
-      useState: (initial) => {
-        const i = cursor++;
-        if (!(i in states)) states[i] = initial;
-        return [
-          states[i],
-          (value: MockValue) => {
-            states[i] = value;
-          },
-        ];
-      },
-      useMemo: (fn) => fn(),
-      useEffect: () => {},
-    },
-    "react/jsx-runtime": { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
-  })("src/app-windows.tsx");
+  let response = "3\x1fAXStandardWindow\x1fRenamed\x1e";
+  let focused: MockValue;
+  const harness = appWindowsHarness("AXWindowsView", {
+    "swift:../../swift/app-hopper-native": { helperExecutablePath: async () => "/mock/native-package" },
+    "./helpers/applescript": { runAppleScript: async () => response },
+  });
   const props = {
     app,
     windows: [ax],
@@ -427,29 +398,25 @@ test("AX subpage refresh updates its own snapshot and remains available when emp
     },
     onRefresh: () => {},
   };
-  function render() {
-    cursor = 0;
-    return AXWindowsView(props);
-  }
-  function find(node: MockValue, predicate: (node: TestNode) => boolean): MockValue {
-    if (Array.isArray(node)) return node.map((child) => find(child, predicate)).find(Boolean);
-    if (!node || typeof node !== "object") return;
-    if (predicate(node)) return node;
-    return find(node.props?.children, predicate) || find(node.props?.actions, predicate);
-  }
+  const render = () => harness.render(props);
+  const find = (tree: TestNode, predicate: (node: TestNode) => boolean) => findAll(tree, predicate)[0];
   const action = (tree: TestNode, title: string) =>
-    find(tree, (node) => node.type === ui.Action && node.props.title === title);
+    find(tree, (node) => node.type === harness.ui.Action && node.props.title === title);
   let tree = render();
-  await action(tree, "Refresh List").props.onAction();
+  const firstRefresh = action(tree, "Refresh List").props.onAction();
+  render();
+  await firstRefresh;
+  await new Promise((resolve) => setImmediate(resolve));
   tree = render();
-  assert(find(tree, (node) => node.type === ui.List.Item && node.props.title === "Renamed"));
+  assert(find(tree, (node) => node.type === harness.ui.List.Item && node.props.title === "Renamed"));
   await action(tree, "Focus Window").props.onAction();
   assert.equal(focused.index, 3);
   response = "";
   await action(tree, "Refresh List").props.onAction();
   tree = render();
-  assert(find(tree, (node) => node.type === ui.List.EmptyView));
+  assert(find(tree, (node) => node.type === harness.ui.List.EmptyView));
   assert(action(tree, "Refresh List"));
+  harness.unmount();
 });
 
 test("off-space app records produce an app action that restores UI only after a successful empty AX query", async () => {

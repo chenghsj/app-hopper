@@ -110,6 +110,7 @@ function renderer(
         isLoading: false,
         revalidate() {},
       }),
+      usePromise: () => ({ isLoading: false, revalidate() {} }),
       ...mocks["@raycast/utils"],
     },
   });

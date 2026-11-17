@@ -89,20 +89,30 @@ export function browserSnapshotHarness(mocks: MockModules = {}) {
   return { ...harness, render: (browser: MockValue, snapshot?: MockValue) => harness.render([browser, snapshot]) };
 }
 
-export function browserTabsHarness(mocks: MockModules = {}) {
+function viewHarness(file: string, exportName: string, mocks: MockModules = {}) {
   const jsx = (type: MockValue, props: MockValue) => ({ type, props });
-  const harness = hookHarness("src/browser-windows.tsx", "BrowserTabsView", {
+  const ui = {
+    Action: "Action",
+    ActionPanel: "ActionPanel",
+    List: { Item: "List.Item", EmptyView: "List.EmptyView" },
+    Icon: {},
+    Keyboard: { Shortcut: { Common: { Refresh: {} } } },
+    ...mocks["@raycast/api"],
+  };
+  const harness = hookHarness(file, exportName, {
     ...mocks,
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "./firefox-integration": {},
-    "@raycast/api": {
-      Action: "Action",
-      ActionPanel: "ActionPanel",
-      List: { Item: "List.Item", EmptyView: "List.EmptyView" },
-      Icon: {},
-      Keyboard: { Shortcut: { Common: { Refresh: {} } } },
-      ...mocks["@raycast/api"],
-    },
+    "@raycast/api": ui,
   });
-  return { ...harness, render: (browser: MockValue, window: MockValue) => harness.render([{ browser, window }]) };
+  return { ...harness, ui, render: (props: MockValue) => harness.render([props]) };
+}
+
+export function browserTabsHarness(mocks: MockModules = {}) {
+  const harness = viewHarness("src/browser-windows.tsx", "BrowserTabsView", mocks);
+  return { ...harness, render: (browser: MockValue, window: MockValue) => harness.render({ browser, window }) };
+}
+
+export function appWindowsHarness(exportName: string, mocks: MockModules = {}) {
+  return viewHarness("src/app-windows.tsx", exportName, mocks);
 }

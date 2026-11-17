@@ -10,7 +10,7 @@ App Hopper can optionally use a Firefox companion to list current tab titles and
 
 This is a self-distributed XPI flow. A public Mozilla Add-ons listing is not required. Every released XPI must be Mozilla-signed using the **unlisted** distribution channel.
 
-The shared Mozilla-signed XPI 1.0.1 is published in the [GitHub Release](https://github.com/chenghsj/app-hopper/releases/tag/companion-v1.0.1). `assets/companion-integration.json` pins its public download URL and SHA-256 for both Firefox and Zen. The unsigned build ZIP is for signing, not end-user installation.
+The shared Mozilla-signed XPI 1.0.3 is published in the [GitHub Release](https://github.com/chenghsj/app-hopper/releases/tag/companion-v1.0.3). `assets/companion-integration.json` pins its public download URL and SHA-256 for both Firefox and Zen. The unsigned build ZIP is for signing, not end-user installation.
 
 Setup writes a small text launcher in the current user's helper directory. It runs the native executable built by Raycast's Swift integration, preserving the companion protocol. No native binary is copied or compiled during setup. After moving the extension, choose **Repair Local Helper** to update its executable path. The integration uses per-user locations, without administrator privileges, login items, launch agents, or a TCP listener.
 
@@ -48,7 +48,7 @@ Tab data is requested on list refresh and sent over local IPC only, without stor
 
 ## Release preparation
 
-Companion 1.0.1 is already published and pinned for both browsers. The signing and hosting steps below apply to future companion versions; reuse the existing signed XPI for installation and acceptance of 1.0.1.
+Companion 1.0.3 is published and pinned for both browsers. The signing and hosting steps below apply to future companion versions; use the existing signed XPI for installation and acceptance of 1.0.3.
 
 1. Run `npm test`, `npm run lint`, and `npm run build`.
 2. Run `npm run package:firefox`. It writes the shared **unsigned** `app-hopper-companion-<version>.zip` under `dist/companion/` for signing, with `manifest.json` and `background.js` at the archive root.

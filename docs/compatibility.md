@@ -14,6 +14,14 @@
 
 Raycast's own system requirement also applies and can be newer than the helpers' deployment target. Do not advertise a minimum supported macOS version based solely on a compiler target.
 
+### Companion 1.0.3 release and shared refresh hooks (2026-11-18)
+
+Companion 1.0.3 was Mozilla-signed and published by the [release workflow](https://github.com/chenghsj/app-hopper/actions/runs/44141412888), and its URL/version/SHA-256 are pinned in App Hopper. Anonymous downloads of the signed XPI and reviewer source ZIP matched `SHA256SUMS`; the XPI also matched the source manifest, built background JavaScript and expected signature metadata. The release lookup now uses the existing workflow token, with regressions for authenticated lookup and refusing an existing release. Browser installation remains the cryptographic verifier; a signed-version upgrade was not performed.
+
+Ordinary and AX window refreshes now use Raycast's `usePromise` for loading, cancellation, obsolete-result rejection and failure toasts. The initial scan waits for Refresh, while subsequent revalidation retains the loading indicator. Tests execute the installed Raycast hook for both views, including app-identity changes, late results/errors, repeated refreshes and Back. All 327 tests, complete typechecks, lint, distribution build, universal native verification and Store verification passed under Node 24.16.0. The publisher-only source revision also passed [cloud CI](https://github.com/chenghsj/app-hopper/actions/runs/44141329063).
+
+The final manual window-refresh check was blocked by the Mac being locked. The earlier browser Refresh/Back check below remains evidence for that browser workflow; it does not establish live acceptance of the new ordinary/AX window hook or the signed companion upgrade.
+
 ### Review follow-up (2026-11-18)
 
 Companion 1.0.3 now reports its actual active-tab URL, including the pending URL fallback. Reconciliation uses this value instead of treating any same-title background tab as active-window evidence. With older companions, duplicate active-title tabs remain title-only possibilities; an unreadable private window cannot claim a companion window's native ID or Space through a matching background URL. Nested **Show Tabs** queries now pass Raycast's abort signal through to the shared browser scan on refresh replacement and Back.
