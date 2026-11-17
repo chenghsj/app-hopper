@@ -35,6 +35,7 @@ jobs:
         id: plan
         env:
           DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
         run: node --import tsx scripts/companion-release.ts plan
       - run: npm run package:companion-source
       - run: npm run lint:companion

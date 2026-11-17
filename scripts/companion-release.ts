@@ -26,7 +26,10 @@ async function main() {
   }
   if (process.argv[2] === "plan") {
     if (!dryRun) {
-      const response = await fetch(`https://api.github.com/repos/chenghsj/app-hopper/releases/tags/${plan.tag}`);
+      const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+      const response = await fetch(`https://api.github.com/repos/chenghsj/app-hopper/releases/tags/${plan.tag}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       if (response.status !== 404) {
         throw new Error(
           response.ok
