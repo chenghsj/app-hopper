@@ -61,17 +61,37 @@ function operations(overrides = {}) {
 
 const { activateApplication, focusNativeWindow } = modules()("src/window-focus.ts");
 
+for (const method of ["activateApplication", "focusNativeWindow"] as const) {
+  test(`${method} sends the exact window and process to native focus without scanning every app first`, async () => {
+    const calls: number[][] = [];
+    const ops = operations({
+      queryWindows: async () => assert.fail("A successful native focus must not scan every application's windows"),
+      focusNativeWindowById: async (id: number, pid: number) => {
+        calls.push([id, pid]);
+      },
+    });
+    const result =
+      method === "activateApplication" ? await activateApplication(app, ops) : await focusNativeWindow(native, ops);
+    assert.equal(result, "focused");
+    assert.deepEqual(calls, [[native.id, native.pid]]);
+  });
+}
+
 test("a reused window ID from another process is treated as missing", async () => {
-  const ops = operations({ queryWindows: async () => [{ ...native, pid: 99 }] });
+  const ops = operations({
+    queryWindows: async () => [{ ...native, pid: 99 }],
+    focusNativeWindowById: async () => {
+      throw new Error("Window no longer exists.");
+    },
+  });
   assert.equal(await focusNativeWindow(native, ops), "missing");
   assert.equal(await activateApplication(app, ops), "missing");
   assert.deepEqual(ops.calls, []);
 });
 
 test("focus failure detects a window that closed during the operation", async () => {
-  let queries = 0;
   const ops = operations({
-    queryWindows: async () => (++queries === 1 ? [native] : []),
+    queryWindows: async () => [],
     focusNativeWindowById: async () => {
       throw new Error("Closed");
     },
@@ -80,12 +100,10 @@ test("focus failure detects a window that closed during the operation", async ()
 });
 
 test("a failed verification after focus failure preserves the original error", async () => {
-  let queries = 0;
   const failure = new Error("Focus failed");
   const ops = operations({
     queryWindows: async () => {
-      if (++queries > 1) throw new Error("Query failed");
-      return [native];
+      throw new Error("Query failed");
     },
     focusNativeWindowById: async () => {
       throw failure;
@@ -135,7 +153,10 @@ test("multiple accessible windows require selection; zero accessible windows all
       queryWindows: async () => [{ ...native, "has-ax-reference": false }],
       queryAXWindows: async () => Array.from({ length: count }, () => ax),
     });
-    assert.equal(await activateApplication(app, ops), count === 0 ? "focused" : "multiple");
+    assert.equal(
+      await activateApplication({ ...app, windows: [{ ...native, "has-ax-reference": false }] }, ops),
+      count === 0 ? "focused" : "multiple",
+    );
     assert.deepEqual(ops.calls, count === 0 ? ["reopen"] : []);
   }
 });
@@ -147,7 +168,10 @@ test("failure to raise an existing AX window does not fall through to reopening"
       throw new Error("Stale AX index");
     },
   });
-  await assert.rejects(activateApplication(app, ops), /Stale AX index/);
+  await assert.rejects(
+    activateApplication({ ...app, windows: [{ ...native, "has-ax-reference": false }] }, ops),
+    /Stale AX index/,
+  );
   assert.deepEqual(ops.calls, []);
 });
 

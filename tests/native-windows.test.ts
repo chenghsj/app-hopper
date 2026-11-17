@@ -1,7 +1,70 @@
 import type { Window as NativeWindow } from "../src/windows";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fixturePath, readAsset, swiftFunction, runSwiftHarness } from "./swift-harness.ts";
+import { fixturePath, readAsset, readFixture, swiftFunction, runSwiftHarness } from "./swift-harness.ts";
+
+function discoveryHarness(main: string) {
+  const source = readAsset("macos-windows.swift");
+  return runSwiftHarness(
+    [
+      readFixture("native-window-discovery.swift"),
+      swiftFunction(source, "windowId"),
+      swiftFunction(source, "discoverAXWindowElements").replaceAll("ProcessInfo.processInfo.systemUptime", "fixtureTime"),
+      main,
+    ].join("\n"),
+  );
+}
+
+for (const route of ["windows", "main", "focused", "remote"]) {
+  test(`native discovery bounds the first window query from ${route} Accessibility references`, () => {
+    discoveryHarness(`
+      route = "${route}"
+      let found = discoverAXWindowElements(pid: 20, expectedWindowIds: [10])
+      precondition(found[10] != nil, "Keep the discovered window")
+      precondition(queriedElements == [1], "Resolve the expected window without unnecessary scanning")
+    `);
+  });
+}
+
+test("native discovery stops slow token scanning and keeps windows already found", () => {
+  discoveryHarness(`
+    route = "slow"
+    requireElementTimeout = false
+    let found = discoverAXWindowElements(pid: 20, expectedWindowIds: [10, 11])
+    precondition(found[10] != nil, "Retain the responsive window when another reference is unavailable")
+    precondition(found[11] == nil)
+    precondition(fixtureTime < 2, "Slow token queries must not exhaust the ten-second command timeout")
+    precondition(queriedElements.count < 20, "Stop probing after the discovery budget expires")
+  `);
+});
+
+test("native focus checks only the target window and rejects a closed or reused process identity", () => {
+  const resolveOwner = swiftFunction(readAsset("macos-windows.swift"), "resolveOwnerPid").replaceAll(
+    "CGWindowListCopyWindowInfo(",
+    "fixtureWindowInfo(",
+  );
+  runSwiftHarness(
+    [
+      "import Foundation\nimport CoreGraphics",
+      `var entries: [[String: Any]] = [[kCGWindowNumber as String: 10, kCGWindowOwnerPID as String: 20]]
+      var lookups = 0
+      func fixtureWindowInfo(_ options: CGWindowListOption, _ relative: CGWindowID) -> Any? {
+        precondition(options == .optionIncludingWindow, "Focus must only inspect the selected window")
+        precondition(relative == 10)
+        lookups += 1
+        return entries
+      }`,
+      resolveOwner,
+      `precondition(resolveOwnerPid(for: 10, explicitPid: 20) == 20)
+      precondition(lookups == 1, "Validate the supplied process instead of trusting a cached identity")
+      entries = [[kCGWindowNumber as String: 10, kCGWindowOwnerPID as String: 99]]
+      precondition(resolveOwnerPid(for: 10, explicitPid: 20) == nil, "Never focus a window reused by another process")
+      precondition(resolveOwnerPid(for: 10, explicitPid: nil) == 99)
+      entries = []
+      precondition(resolveOwnerPid(for: 10, explicitPid: 20) == nil, "A closed window must fail before AX discovery")`,
+    ].join("\n"),
+  );
+});
 
 test("native list retains minimized dialogs and off-space apps without exposing utility windows", () => {
   const source = readAsset("macos-windows.swift");
