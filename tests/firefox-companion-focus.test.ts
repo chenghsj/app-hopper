@@ -12,7 +12,11 @@ for (const appName of ["Firefox", "Zen"]) {
     let nativeQueries = 0;
     const native = [155, 156].map((id) => ({ id, pid: 99, app: appName, title: "Same" }));
     const firefox = createLoader({
-      "./firefox-integration": { FIREFOX_DIRECTORY: "/firefox", ZEN_DIRECTORY: "/zen" },
+      "./firefox-integration": {
+        FIREFOX_DIRECTORY: "/firefox",
+        ZEN_DIRECTORY: "/zen",
+        migrateFirefoxHost: async () => {},
+      },
       "node:fs/promises": { readdir: async () => [session + ".sock"] },
       "node:net": {
         createConnection: (socketPath: string) => {

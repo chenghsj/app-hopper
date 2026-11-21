@@ -80,6 +80,65 @@ test("failed launcher writes leave no manifest or partial launcher and can be re
   assert.equal(await integration.isFirefoxHostInstalled(), true);
 });
 
+test("Firefox migrates only its own legacy registration after the new launcher is ready", async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "ah-migrate-"));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const support = path.join(home, "Library/Application Support");
+  const legacy = path.join(support, "raycast-yabai-firefox");
+  const hosts = path.join(support, "Mozilla/NativeMessagingHosts");
+  const manifestPath = path.join(hosts, "app_hopper.firefox.json");
+  const otherHost = path.join(hosts, "com.chenghsj.yabai_firefox.json");
+  const oldLauncher = path.join(legacy, "firefox-bridge-1234567890ab");
+  const owned = {
+    name: "app_hopper.firefox",
+    type: "stdio",
+    allowed_extensions: ["app-hopper-firefox@chenghsj"],
+    path: oldLauncher,
+  };
+  let fail = true;
+  const integration = createLoader({
+    "node:fs/promises": {
+      ...fs,
+      rename: async (from, to) => {
+        if (fail && to === manifestPath) throw new Error("Registration write failed");
+        await fs.rename(from, to);
+      },
+    },
+    "node:os": { homedir: () => home },
+    "swift:../../swift/app-hopper-native": {
+      helperExecutablePath: async () => "/built/native helper",
+    },
+  })("src/browsers/firefox-integration.ts");
+
+  await fs.mkdir(legacy, { recursive: true });
+  await fs.mkdir(hosts, { recursive: true });
+  await fs.writeFile(oldLauncher, "old launcher");
+  await fs.writeFile(otherHost, "Yabai registration");
+  await integration.migrateFirefoxHost();
+  await assert.rejects(fs.stat(integration.FIREFOX_DIRECTORY), { code: "ENOENT" });
+
+  const foreign = { ...owned, allowed_extensions: ["yabai-raycast-bridge@chenghsj"] };
+  await fs.writeFile(manifestPath, JSON.stringify(foreign));
+  await integration.migrateFirefoxHost();
+  assert.deepEqual(JSON.parse(await fs.readFile(manifestPath, "utf8")), foreign);
+
+  await fs.writeFile(manifestPath, JSON.stringify(owned));
+  await assert.rejects(integration.migrateFirefoxHost(), /Registration write failed/);
+  assert.deepEqual(JSON.parse(await fs.readFile(manifestPath, "utf8")), owned);
+  fail = false;
+  await Promise.all([integration.migrateFirefoxHost(), integration.migrateFirefoxHost()]);
+  assert.equal(await integration.isFirefoxHostInstalled(), true);
+  const migrated = JSON.parse(await fs.readFile(manifestPath, "utf8"));
+  assert.deepEqual(migrated.allowed_extensions, owned.allowed_extensions);
+  assert.equal(path.dirname(migrated.path), path.join(support, "raycast-app-hopper-firefox"));
+  const helperArgs = JSON.stringify(["--directory", integration.FIREFOX_DIRECTORY]);
+  assert((await fs.readFile(migrated.path, "utf8")).includes(helperArgs));
+  await integration.migrateFirefoxHost();
+  assert.deepEqual(JSON.parse(await fs.readFile(manifestPath, "utf8")), migrated);
+  assert.equal(await fs.readFile(oldLauncher, "utf8"), "old launcher");
+  assert.equal(await fs.readFile(otherHost, "utf8"), "Yabai registration");
+});
+
 test("removing Firefox integration stops helpers after unregistering and preserves AX and unrelated files", async (t) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "ah-remove-"));
   t.after(() => fs.rm(home, { recursive: true, force: true }));

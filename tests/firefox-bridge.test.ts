@@ -144,6 +144,7 @@ for (const id of ["firefox", "zen"]) {
       "./firefox-integration": {
         FIREFOX_DIRECTORY: id === "firefox" ? directory : directory + "/unused",
         ZEN_DIRECTORY: id === "zen" ? directory : directory + "/unused",
+        migrateFirefoxHost: async () => {},
       },
       "../windows": {
         queryWindows: async () => nativeWindows,

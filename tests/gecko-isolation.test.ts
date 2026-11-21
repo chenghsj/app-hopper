@@ -68,7 +68,11 @@ test("Zen companions expose hidden-sidebar URLs, retain unconnected profiles and
         focused.push(id);
       },
     },
-    "./firefox-integration": { FIREFOX_DIRECTORY: dirs.firefox, ZEN_DIRECTORY: dirs.zen },
+    "./firefox-integration": {
+      FIREFOX_DIRECTORY: dirs.firefox,
+      ZEN_DIRECTORY: dirs.zen,
+      migrateFirefoxHost: async () => {},
+    },
     "../helpers/browser-helper": {
       runBrowserHelper: async () =>
         JSON.stringify(

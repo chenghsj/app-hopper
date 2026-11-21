@@ -9,7 +9,11 @@ for (const appName of ["Firefox", "Zen"]) {
     let destroyed = false;
     let reads = 0;
     const { getFirefoxWindows } = createLoader({
-      "./firefox-integration": { FIREFOX_DIRECTORY: "/firefox", ZEN_DIRECTORY: "/zen" },
+      "./firefox-integration": {
+        FIREFOX_DIRECTORY: "/firefox",
+        ZEN_DIRECTORY: "/zen",
+        migrateFirefoxHost: async () => {},
+      },
       "node:fs/promises": { readdir: async () => ["abcdef1234567890.sock"] },
       "node:net": {
         createConnection: () => {

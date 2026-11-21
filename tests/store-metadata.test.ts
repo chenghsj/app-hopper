@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { verifyStoreMetadata } from "../scripts/store-metadata.ts";
@@ -12,7 +12,9 @@ function listing(t: { after: (cleanup: () => void) => void }) {
     writeFileSync(path.join(root, file), readFileSync(path.resolve(file)));
   }
   mkdirSync(path.join(root, "metadata"));
-  writeFileSync(path.join(root, "metadata/screenshot.png"), readFileSync(path.resolve("metadata/screenshot-1.png")));
+  const screenshot = readdirSync("metadata").find((file) => file.endsWith(".png"));
+  assert(screenshot, "Expected a PNG screenshot in the Store metadata");
+  writeFileSync(path.join(root, "metadata/screenshot.png"), readFileSync(path.join("metadata", screenshot)));
   return root;
 }
 

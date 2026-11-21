@@ -62,6 +62,7 @@ function setup(
       hasFirefoxCompanionUpdate: (versions) => versions.includes("0.9.0"),
     },
     "./browsers/firefox-integration": {
+      migrateFirefoxHost: async () => {},
       installFirefoxHost: async (id) => {
         targets.push(id);
         steps.push(["install"]);

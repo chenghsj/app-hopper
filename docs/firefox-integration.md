@@ -37,10 +37,11 @@ The companion is a separately installed Firefox add-on. **Manage Firefox Compani
 ## Files and process lifetime
 
 - Native manifest: `~/Library/Application Support/Mozilla/NativeMessagingHosts/app_hopper.firefox.json`.
-- Helper: `~/Library/Application Support/raycast-yabai-firefox/firefox-bridge-<source hash>`.
-- Swift module cache: `~/Library/Application Support/raycast-yabai-firefox/module-cache/`.
-- Verified XPI cache: `~/Library/Application Support/raycast-yabai-firefox/companion/`.
-- Per-connection socket: the same helper directory, with a random 16-character session name and `.sock` suffix. This directory name retains compatibility with the existing adapter.
+- Launcher: `~/Library/Application Support/raycast-app-hopper-firefox/firefox-bridge-<launcher hash>`.
+- Verified XPI cache: `~/Library/Application Support/raycast-app-hopper-firefox/companion/`.
+- Per-connection socket: the same directory, with a random 16-character session name and `.sock` suffix.
+
+On the first Firefox scan or integration check after an update, App Hopper moves its existing native messaging registration from `raycast-yabai-firefox` by installing a new launcher and replacing its own manifest. Firefox keeps the installed add-on. Click the companion's toolbar button or restart Firefox to reconnect a session that was already running. The old directory is shared with the Yabai integration and its files are left in place.
 
 The directory is restricted to the current user, the manifest and sockets to owner read/write, and the helper to owner execution. The native manifest allows only `app-hopper-firefox@chenghsj`. Firefox starts the helper with `runtime.connectNative()` and owns its lifetime. EOF, SIGTERM, and requested shutdown remove that session's socket. A forced kill may leave an inert socket; the adapter ignores failed connections and falls back to Accessibility when no companion responds.
 
