@@ -41,7 +41,7 @@ The companion is a separately installed Firefox add-on. **Manage Firefox Compani
 - Verified XPI cache: `~/Library/Application Support/raycast-app-hopper-firefox/companion/`.
 - Per-connection socket: the same directory, with a random 16-character session name and `.sock` suffix.
 
-On the first Firefox scan or integration check after an update, App Hopper moves its existing native messaging registration from `raycast-yabai-firefox` by installing a new launcher and replacing its own manifest. Firefox keeps the installed add-on. Click the companion's toolbar button or restart Firefox to reconnect a session that was already running. The old directory is shared with the Yabai integration and its files are left in place.
+On the first Firefox scan or integration check after an update, App Hopper installs a new launcher and replaces its own native messaging registration from `raycast-yabai-firefox`. It then identifies and stops its running helpers in the old directory so the installed companion can reconnect automatically. Removal also stops verified App Hopper helpers in the old directory. Files and other helpers in the shared directory remain available to the Yabai integration.
 
 The directory is restricted to the current user, the manifest and sockets to owner read/write, and the helper to owner execution. The native manifest allows only `app-hopper-firefox@chenghsj`. Firefox starts the helper with `runtime.connectNative()` and owns its lifetime. EOF, SIGTERM, and requested shutdown remove that session's socket. A forced kill may leave an inert socket; the adapter ignores failed connections and falls back to Accessibility when no companion responds.
 

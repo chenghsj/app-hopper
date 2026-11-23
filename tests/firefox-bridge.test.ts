@@ -222,6 +222,82 @@ for (const id of ["firefox", "zen"]) {
   });
 }
 
+test("Firefox migration and removal stop owned legacy helpers without sending commands to Yabai", async (t) => {
+  const home = fs.mkdtempSync("/tmp/ah-old-");
+  const support = path.join(home, "Library/Application Support");
+  const legacy = path.join(support, "raycast-yabai-firefox");
+  const manifestPath = path.join(support, "Mozilla/NativeMessagingHosts/app_hopper.firefox.json");
+  const legacyLauncher = path.join(legacy, "firefox-bridge-1234567890ab");
+  const original = path.resolve("assets/compiled_raycast_swift/app-hopper-native");
+  const executable = (slug: string) =>
+    path.join(home, "extensions", slug, "assets/compiled_raycast_swift/app-hopper-native");
+  const current = executable("app-hopper-window-and-tab-switcher");
+  const previous = executable("app-hopper");
+  for (const file of [current, previous]) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.copyFileSync(original, file);
+  }
+  fs.mkdirSync(legacy, { recursive: true });
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  fs.writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      name: "app_hopper.firefox",
+      path: legacyLauncher,
+      allowed_extensions: ["app-hopper-firefox@chenghsj"],
+      type: "stdio",
+    }),
+  );
+  const load = createLoader({
+    "node:os": { homedir: () => home },
+    "swift:../../swift/app-hopper-native": { helperExecutablePath: async () => current },
+    "../windows": {},
+  });
+  const integration = load("src/browsers/firefox-integration.ts");
+  const firefox = load("src/browsers/firefox.ts");
+  const args = ["runHelper", JSON.stringify("firefox-bridge"), JSON.stringify(["--directory", legacy])];
+  const oldPackage = spawn(previous, args);
+  oldPackage.stderr.resume();
+  const firstExit = once(oldPackage, "close");
+  let standalone: ReturnType<typeof spawn> | undefined;
+  let foreignRequests = 0;
+  const foreign = net.createServer((socket) => {
+    socket.on("data", () => foreignRequests++);
+  });
+  t.after(async () => {
+    oldPackage.kill();
+    standalone?.kill();
+    if (foreign.listening) await new Promise<void>((resolve) => foreign.close(() => resolve()));
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const oldSocket = await waitForSocket(oldPackage, legacy);
+  const yabaiSocket = path.join(legacy, "abcdef1234567890.sock");
+  foreign.listen(yabaiSocket);
+  await once(foreign, "listening");
+  await integration.migrateFirefoxHost();
+  assert.equal(await integration.isFirefoxHostInstalled(), true);
+  assert.equal(fs.existsSync(oldSocket), false, "migration must close the old package's socket");
+  assert.deepEqual(await firstExit, [0, null]);
+
+  // A standalone helper can remain from an installation migrated by an earlier build.
+  fs.copyFileSync(original, legacyLauncher);
+  await new Promise<void>((resolve) => foreign.close(() => resolve()));
+  standalone = spawn(legacyLauncher, args);
+  standalone.stderr?.resume();
+  const secondExit = once(standalone, "close");
+  const standaloneSocket = await waitForSocket(standalone, legacy);
+  foreign.listen(yabaiSocket);
+  await once(foreign, "listening");
+  await integration.removeFirefoxHost(() => firefox.disconnectFirefoxBridges());
+  assert.equal(fs.existsSync(manifestPath), false);
+  assert.equal(fs.existsSync(standaloneSocket), false, "removal must stop the standalone legacy helper");
+  assert.deepEqual(await secondExit, [0, null]);
+  assert.equal(fs.existsSync(legacyLauncher), true);
+  assert.equal(fs.existsSync(yabaiSocket), true);
+  assert.equal(foreignRequests, 0);
+});
+
 test("Firefox companion reconnects after helper installation and toolbar clicks replace an existing connection", async () => {
   const ports: TestPort[] = [];
   const timers: { callback: () => void; delay: number }[] = [];

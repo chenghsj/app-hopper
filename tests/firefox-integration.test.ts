@@ -139,6 +139,47 @@ test("Firefox migrates only its own legacy registration after the new launcher i
   assert.equal(await fs.readFile(otherHost, "utf8"), "Yabai registration");
 });
 
+test("Firefox retries an interrupted legacy cleanup even after the registration has moved", async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "ah-migrate-retry-"));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const legacy = path.join(home, "Library/Application Support/raycast-yabai-firefox");
+  let socket = "1234567890abcdef.sock";
+  let cleanupCalls = 0;
+  const integration = createLoader({
+    "node:fs/promises": {
+      ...fs,
+      readdir: async (directory, options) =>
+        directory === legacy
+          ? [
+              { name: socket, isSocket: () => true },
+              { name: "fedcba0987654321.sock", isSocket: () => false },
+            ]
+          : fs.readdir(directory, options),
+    },
+    "node:os": { homedir: () => home },
+    "swift:../../swift/app-hopper-native": {
+      helperExecutablePath: async () => "/built/native helper",
+    },
+    "../helpers/native-helper": {
+      runNativeHelper: async (name, args) => {
+        assert.equal(name, "stop-legacy-firefox-bridges");
+        assert.deepEqual(args, [legacy, socket]);
+        if (++cleanupCalls === 1) throw new Error("Shutdown failed");
+      },
+    },
+  })("src/browsers/firefox-integration.ts");
+
+  await integration.installFirefoxHost();
+  await assert.rejects(integration.migrateFirefoxHost(), /Shutdown failed/);
+  await Promise.all([integration.migrateFirefoxHost(), integration.migrateFirefoxHost()]);
+  await integration.migrateFirefoxHost();
+  assert.equal(cleanupCalls, 2);
+
+  socket = "0123456789abcdef.sock";
+  await integration.migrateFirefoxHost();
+  assert.equal(cleanupCalls, 3, "a legacy helper starting during migration must be checked on the next scan");
+});
+
 test("removing Firefox integration stops helpers after unregistering and preserves AX and unrelated files", async (t) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "ah-remove-"));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
